@@ -1,0 +1,182 @@
+{% load i18n %}
+{# Device add/edit form helper. See DEVELOPER.md "The device form". #}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+  var MODE = '{{ naming_mode|escapejs }}';
+  var DEVICE = '{{ naming_device|escapejs }}';
+  var URL = '{{ naming_url|escapejs }}';
+  var TEXT = {
+    edit: '{{ _("Type a name yourself")|escapejs }}',
+    lock: '{{ _("Use the rule&#39;s name")|escapejs }}',
+    again: '{{ _("Suggest again")|escapejs }}',
+    fromRule: '{{ _("Name from the rule")|escapejs }}',
+    confirmed: '{{ _("The number is confirmed when you save.")|escapejs }}',
+    waiting: '{{ _("Filled in once these are set:")|escapejs }}',
+    typing: '{{ _("You are typing your own name. Rule:")|escapejs }}',
+    suggests: '{{ _("suggests")|escapejs }}'
+  };
+  var FIELDS = ['site', 'location', 'rack', 'role', 'device_type', 'tenant', 'platform', 'status', 'serial',
+                'asset_tag', 'primary_ip4', 'primary_ip6'];
+
+  var input = document.getElementById('id_name');
+  if (!input || !input.form) { return; }
+  var form = input.form;
+  var cookie = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+  var token = cookie ? decodeURIComponent(cookie[1]) : '{{ csrf_token|escapejs }}';
+
+  var group = document.createElement('div');
+  group.className = 'input-group';
+  input.parentNode.insertBefore(group, input);
+  group.appendChild(input);
+  var button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn-outline-secondary';
+  button.hidden = true;
+  group.appendChild(button);
+  var note = document.createElement('div');
+  note.className = 'form-text';
+  group.parentNode.insertBefore(note, group.nextSibling);
+
+  // On add the name starts locked (grayed, filled in by the rule) unless the
+  // form came back with a name typed in.
+  var locked = MODE === 'add' && !input.value;
+  var last = null;
+  var lastSent = null;
+  var first = true;
+  var timer = null;
+
+  function values() {
+    var data = new FormData(form);
+    var out = {};
+    FIELDS.forEach(function (key) {
+      var value = data.get(key);
+      if (value !== null && value !== '') { out[key] = value; }
+    });
+    out.tags = data.getAll('tags').filter(function (v) { return v !== ''; }).map(Number);
+    var cf = {};
+    data.forEach(function (value, key) {
+      if (key.indexOf('cf_') === 0 && value !== '') { cf[key.slice(3)] = value; }
+    });
+    out.custom_fields = cf;
+    if (DEVICE) { out.device = Number(DEVICE); out.name = input.value; }
+    return out;
+  }
+
+  function setIcon(name, title) {
+    button.textContent = '';
+    var icon = document.createElement('i');
+    icon.className = 'mdi ' + name;
+    button.appendChild(icon);
+    button.title = title;
+    button.setAttribute('aria-label', title);
+  }
+
+  // Sent with a name the rule filled in, so the server picks its number
+  // again at save instead of treating it as typed (signals.py).
+  var marker = document.createElement('input');
+  marker.type = 'hidden';
+  marker.name = '_naming_auto';
+  marker.value = '1';
+
+  function lock(on) {
+    input.readOnly = on;
+    if (on && !marker.parentNode) { form.appendChild(marker); }
+    if (!on && marker.parentNode) { marker.parentNode.removeChild(marker); }
+    input.style.backgroundColor = on ? 'var(--tblr-bg-surface-secondary, #f1f3f5)' : '';
+  }
+
+  function show() {
+    var rule = last && last.rule;
+    if (MODE === 'add') {
+      if (!rule) {
+        // No rule for this device (yet): the name field as NetBox has it.
+        if (locked) { input.value = ''; }
+        lock(false);
+        input.placeholder = '';
+        button.hidden = true;
+        note.textContent = '';
+        return;
+      }
+      button.hidden = false;
+      if (locked) {
+        lock(true);
+        input.value = last.ready ? last.name : '';
+        input.placeholder = '';
+        if (last.ready) {
+          note.textContent = TEXT.fromRule + ' "' + rule.name + '". ' + TEXT.confirmed;
+        } else if (last.error) {
+          note.textContent = last.error;
+        } else {
+          note.textContent = TEXT.waiting + ' ' + last.missing.join(', ') + ' (' + rule.name + ')';
+        }
+        setIcon('mdi-pencil', TEXT.edit);
+      } else {
+        lock(false);
+        input.placeholder = last.ready ? last.name : '';
+        note.textContent = TEXT.typing + ' "' + rule.name + '".';
+        setIcon('mdi-lock-outline', TEXT.lock);
+      }
+      return;
+    }
+    // Edit: never change the name on its own; offer the rule's name.
+    if (!rule || !last.ready || last.name === input.value) {
+      button.hidden = true;
+      note.textContent = rule && last.error ? last.error : '';
+      return;
+    }
+    button.hidden = false;
+    button.textContent = TEXT.again;
+    button.title = TEXT.again;
+    note.textContent = '"' + rule.name + '" ' + TEXT.suggests + ' ' + last.name + '.';
+  }
+
+  function ask() {
+    var body = JSON.stringify(values());
+    if (body === lastSent) { return; }
+    lastSent = body;
+    fetch(URL, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRFToken': token},
+      body: body
+    }).then(function (response) {
+      return response.ok ? response.json() : null;
+    }).then(function (data) {
+      if (data && body === lastSent) {
+        // A form shown again after an error still holds the rule's name.
+        if (MODE === 'add' && first && data.ready && input.value === data.name) { locked = true; }
+        first = false;
+        last = data;
+        show();
+      }
+    }).catch(function () { /* the form works without suggestions */ });
+  }
+
+  function soon() {
+    clearTimeout(timer);
+    timer = setTimeout(ask, 250);
+  }
+
+  button.addEventListener('click', function () {
+    if (MODE === 'add') {
+      locked = !locked;
+      show();
+      if (!locked) { input.focus(); input.select(); }
+      return;
+    }
+    if (last && last.ready) {
+      input.value = last.name;
+      show();
+    }
+  });
+  form.addEventListener('change', function (event) {
+    if (event.target !== input) { soon(); }
+  });
+  input.addEventListener('input', function () { if (MODE === 'edit') { show(); } });
+  // Selects driven by TomSelect don't always send a change event the form
+  // sees; look for changed values now and then too.
+  setInterval(ask, 1500);
+  ask();
+});
+</script>
