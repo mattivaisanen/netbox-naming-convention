@@ -24,6 +24,27 @@ class NamingTests(NetBoxData, TestCase):
         self.assertEqual(self.device(rack=self.jk8).name, 'FITASWI001_JK8')
         self.assertEqual(self.device(rack=self.jk9).name, 'FITASWI002_JK9')
 
+    def test_suggestion_has_a_readable_pattern(self):
+        self.assertEqual(suggest(self.device(rack=self.jk8, save=False)).pattern, 'FITASWI###_JK8')
+        self.assertEqual(suggest(self.device(save=False)).pattern, 'FITASWI###_<rack>')
+
+    def test_drifted_device_gets_its_earlier_number_back(self):
+        device = self.device(rack=self.jk8)
+        self.device(rack=self.jk8)  # FITASWI002_JK8
+        device.name = 'FITTSWI001'
+        device.save()
+        self.assertEqual(suggest(device).name, 'FITASWI001_JK8')
+        # Once someone else has 001, the device gets the next free number.
+        Device.objects.filter(name='FITASWI002_JK8').update(name='FITASWI001_JK9')
+        self.assertEqual(suggest(device).name, 'FITASWI003_JK8')
+
+    def test_suggestions_for_several_devices_are_distinct(self):
+        first, second = self.device(rack=self.jk8, save=False), self.device(rack=self.jk9, save=False)
+        taken = {}
+        one = suggest(first, taken=taken)
+        taken.setdefault(one.series, set()).add(one.number)
+        self.assertEqual((one.name, suggest(second, taken=taken).name), ('FITASWI001_JK8', 'FITASWI002_JK9'))
+
     def test_child_role_matches(self):
         # The rule is for Switch; Access (its child) matches. A device with
         # role Switch itself matches too, but its role has no parent, so the

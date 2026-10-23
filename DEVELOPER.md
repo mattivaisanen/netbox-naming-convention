@@ -12,7 +12,9 @@ How the plugin works and why, for anyone changing it.
 | `naming.py` | `suggest()` (no writes), `assign()` (under the series lock), `remember()`, `follows()`, `check_typed_name()`. |
 | `signals.py` | The device save hooks. |
 | `api/patches.py` | The one wrapped NetBox internal (see below). |
-| `template_content.py`, `templates/.../inc/device_form.html` | The device panel and the device form script. |
+| `template_content.py`, `templates/.../inc/device_form.html` | The device panel, the device form script, and the note on netbox-change-approval's change request page. |
+| `reference.py`, `views.TemplateReferenceView` | The template reference page linked from the rule form. Tests check it lists every value root and filter of `template.py`. |
+| `forms.py` | The rule form. `number_source` is an `HTMXSelect`: changing it draws the form again without the fields of the other source (like NetBox's rack form does for rack types). |
 | `integrations.py` | Detects netbox-change-approval (no code depends on it). |
 
 ## Matching a device that has no row yet
@@ -38,7 +40,8 @@ deleted device's number never comes back. With gap filling the lowest free
 number from `number_first` wins and the high-water mark is ignored.
 
 `NamingSeries` is a plain model on purpose: approval plugins gate every
-NetBoxModel, and taking a number must never wait for approval.
+NetBoxModel, and taking a number must never wait for approval. The same
+goes for `AssignedName` (below).
 
 ## Saving a device
 
@@ -63,6 +66,25 @@ NetBoxModel, and taking a number must never wait for approval.
 3. pre_save also covers code that saves without validating: NetBox's IP
    form sets a device's primary IP with a plain `save()`, so a rule that
    numbers by IP names the device right then.
+4. When pre_save named the device, it adds "Name from naming rule ..." to
+   `instance._changelog_message` (after a message the user typed, within
+   NetBox's 200 characters), which NetBox's `to_objectchange()` writes into
+   the change log entry. **post_save** then records the name in
+   `AssignedName` (device, name, rule, how).
+5. Edit form: when the posted name equals `_naming_suggested` (put there by
+   *Suggest again*) and still equals the rule's suggestion, post_clean
+   records it as `suggested` in `AssignedName` and adds "Name suggested by
+   naming rule ..." to the change log message. It is recorded at clean time
+   on purpose: with netbox-change-approval the rename is queued and saved
+   later in the approver's request, and the change request page needs to
+   know now.
+
+`AssignedName` is what the device panel ("Given by") and the change request
+note read. The note is a `PluginTemplateExtension.alerts()` for the model
+label `netbox_change_approval.changerequest`: just a string, so nothing is
+imported from that plugin, and it only ever matches when it is installed. It
+reads the request's `diff` (the name for a create, `{"old", "new"}` for an
+update) and looks the device and new name up in `AssignedName`.
 
 A device that has a name is never renamed by these hooks.
 
@@ -75,15 +97,48 @@ script sends the form's values to the suggest endpoint whenever they change
 (form `change` events, plus a check every 1.5 s because TomSelect does not
 always produce one), with the session cookie and CSRF token.
 
-- Add: while locked, the name field is read-only and holds the rule's name,
-  and a hidden `_naming_auto=1` goes with the form. `signals._form_says_auto()`
-  sees it and treats the name as the plugin's, so the number is picked again
-  under the lock at save. The pencil button unlocks the field and removes the
-  marker; what is in the field is then a typed name.
-- Edit: never changes the field on its own. When the suggestion differs from
-  the name, a *Suggest again* button puts it in the field.
+- Add: the field starts locked (read-only, grayed, a padlock in front)
+  before anything is chosen, so nobody types a name the rule would have
+  given; it says it is filled in once role and device type are set. When
+  they are set and no rule matches, the field is NetBox's own again. While
+  locked, the field holds the rule's name and a hidden `_naming_auto=1` goes
+  with the form. `signals._form_says_auto()` sees it and treats the name as
+  the plugin's, so the number is picked again under the lock at save. The
+  pencil button unlocks the field and removes the marker; what is in the
+  field is then a typed name.
+- Edit: never changes the field on its own. `head()` checks `follows()`:
+  a name that follows its rule starts locked like on add (the pencil unlocks
+  it). When the suggestion differs from the name, a *Suggest again* button
+  puts it in the field and adds `_naming_suggested=<name>` (see "Saving a
+  device", step 5).
 
-The setting `device_form` turns the script off.
+The script is left out when there are no enabled rules. The setting
+`device_form` turns it off.
+
+The lock is a convenience, not protection: anyone can unlock it, and the
+API and CSV import have no form. A rule with enforcement *refuse* is what
+makes the server turn down names that don't follow it.
+
+## Renaming from the rule page
+
+`NamingRuleRenameView` takes the ticked devices, works out their new names
+with `rename_plan()` (`suggest(..., taken=...)` keeps numbers distinct
+within the batch) and shows old and new names. The confirm button posts
+`id,name` CSV to NetBox's own `dcim:device_bulk_import`, with
+`_naming_rename=1` so post_clean records the names as suggested. Using
+NetBox's import instead of saving here means its permission checks, change
+log and netbox-change-approval's bulk handling apply unchanged.
+
+## Suggestions on edit
+
+`suggest()` on a saved device keeps the number of its current name when the
+name is in the series; otherwise it tries the names `AssignedName` has for
+the device (newest first), so a device renamed by hand gets its own number
+back while no other device has it. The form sends the device's stored name,
+not what is typed in the field, so typing doesn't change the suggestion.
+`Suggestion.pattern` (from `Rendered.pattern`) is the rule's name for the
+device with `###` for the number and `<rack>` for a missing value, for the
+form's hint.
 
 ## REST API: the wrapped serializer
 

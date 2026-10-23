@@ -2,9 +2,9 @@
 Numbers of a series.
 
 A series is the text a number counts in: the prefix before the number
-("shared" scope: FITASWI154_JK8 and FITASWI155_JK9 share FITASWI), or the
-prefix and suffix together ("whole name" scope: FITASWI001_JK8 and
-FITASWI001_JK9 are both number 1, of FITASWI#_JK8 and FITASWI#_JK9).
+("shared" scope: AMS1-SW014-R01 and AMS1-SW015-R02 share AMS1-SW), or the
+prefix and suffix together ("whole name" scope: AMS1-SW001-R01 and
+AMS1-SW001-R02 are both number 1, of AMS1-SW#-R01 and AMS1-SW#-R02).
 
 Used numbers come from the names devices have in NetBox, compared without
 case, so names given before the rule existed count. With gap filling off,
@@ -69,7 +69,7 @@ def name_regex(prefix, suffix, scope):
     if scope == 'name':
         return '^' + re.escape(prefix) + r'([0-9]+)' + re.escape(suffix) + '$'
     # Shared scope: whatever follows the number is decoration, but it must not
-    # be another digit (FITASWI1540 is number 1540, not 154).
+    # be another digit (AMS1-SW1540 is number 1540, not 154).
     return '^' + re.escape(prefix) + r'([0-9]+)([^0-9]|$)'
 
 

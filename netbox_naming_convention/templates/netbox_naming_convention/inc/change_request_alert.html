@@ -1,0 +1,9 @@
+{% load i18n %}
+<div class="alert alert-info" role="alert">
+  <i class="mdi mdi-format-letter-case"></i>
+  {% if assigned.how == 'auto' %}
+    {% blocktrans with name=assigned.name rule=assigned.rule_name %}The name <strong>{{ name }}</strong> was filled in by the naming rule "{{ rule }}".{% endblocktrans %}
+  {% else %}
+    {% blocktrans with name=assigned.name rule=assigned.rule_name %}The name <strong>{{ name }}</strong> was suggested by the naming rule "{{ rule }}".{% endblocktrans %}
+  {% endif %}
+</div>

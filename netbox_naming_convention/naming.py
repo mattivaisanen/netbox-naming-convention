@@ -21,11 +21,11 @@ from django.utils.translation import gettext as _
 from netbox.context import current_request
 
 from .matching import _related, find_rule
-from .models import NamingSeries, NumberSourceChoices
+from .models import AssignedName, NamingSeries, NumberSourceChoices
 from .numbering import (
     NumberError, is_skipped, name_regex, next_number, number_from_ip, series_key, used_numbers,
 )
-from .template import ROOTS, TemplateError
+from .template import NUMBER, ROOTS, TemplateError
 
 __all__ = ('Suggestion', 'suggest', 'assign', 'check_typed_name', 'follows', 'resolve', 'mark_auto', 'is_auto')
 
@@ -46,6 +46,9 @@ class Suggestion:
     error: str = None
     #: The device keeps the number it has (only when editing).
     kept_number: bool = False
+    #: The rule's name for this device with ### for the number, such as
+    #: AMS1-SW###-<rack> (see Rendered.pattern).
+    pattern: str = ''
 
     @property
     def ready(self):
@@ -62,6 +65,7 @@ class Suggestion:
             'error': self.error,
             'ready': self.ready,
             'kept_number': self.kept_number,
+            'pattern': self.pattern or None,
         }
 
 
@@ -104,6 +108,7 @@ def _render(device, rule):
         return out, False
     rendered = template.render(lambda path: resolve(device, path))
     out.prefix, out.suffix, out.missing = rendered.prefix, rendered.suffix, list(rendered.missing)
+    out.pattern = rendered.pattern.replace(NUMBER, '#' * rule.number_digits)
     if template.has_number:
         out.series = series_key(out.prefix, out.suffix, rule.number_scope)
     if template.has_number and rule.number_source == NumberSourceChoices.IP and _primary_ip(device) is None:
@@ -129,10 +134,12 @@ def _finish(out, rule, number):
     return out
 
 
-def _pick(out, rule, device, high_water, keep_current):
+def _pick(out, rule, device, high_water, keep_current, taken=None):
     """Choose the number for a rendered suggestion."""
     scope = rule.number_scope
     used = used_numbers(out.prefix, out.suffix, scope, exclude_pk=device.pk)
+    if taken:
+        used = set(used) | taken.get(out.series, set())
     if rule.number_source == NumberSourceChoices.IP:
         ip = _primary_ip(device)
         try:
@@ -153,12 +160,16 @@ def _pick(out, rule, device, high_water, keep_current):
         return _finish(out, rule, number)
 
     if keep_current and device.pk:
-        # Editing: a device that stays in its series keeps its number.
-        current = _number_of(device.name, out.prefix, out.suffix, scope)
-        if (current is not None and current not in used and rule.number_first <= current <= rule.last_number
-                and not is_skipped(current, rule.skip_ranges)):
-            out.kept_number = True
-            return _finish(out, rule, current)
+        # Editing: a device that stays in its series keeps its number. One
+        # whose name drifted (renamed by hand) gets back the number a rule
+        # gave it, while nobody else has it.
+        earlier = AssignedName.objects.filter(device_id=device.pk).exclude(name=device.name or '')
+        for name in [device.name, *earlier.values_list('name', flat=True)]:
+            current = _number_of(name, out.prefix, out.suffix, scope)
+            if (current is not None and current not in used and rule.number_first <= current <= rule.last_number
+                    and not is_skipped(current, rule.skip_ranges)):
+                out.kept_number = True
+                return _finish(out, rule, current)
     try:
         number = next_number(
             used, first=rule.number_first, last=rule.last_number, skip=rule.skip_ranges,
@@ -173,8 +184,12 @@ def _pick(out, rule, device, high_water, keep_current):
     return _finish(out, rule, number)
 
 
-def suggest(device, rule=None, *, keep_current=True):
-    """The name `device` would get now. Saves and reserves nothing."""
+def suggest(device, rule=None, *, keep_current=True, taken=None):
+    """
+    The name `device` would get now. Saves and reserves nothing. `taken`
+    ({series: {numbers}}) are numbers to treat as used, for suggesting names
+    for several devices at once.
+    """
     rule = rule or find_rule(device)
     if rule is None:
         return Suggestion()
@@ -188,7 +203,7 @@ def suggest(device, rule=None, *, keep_current=True):
             out.name = None
         return out
     high_water = NamingSeries.objects.filter(key=out.series).values_list('high_water', flat=True).first() or 0
-    return _pick(out, rule, device, high_water, keep_current)
+    return _pick(out, rule, device, high_water, keep_current, taken)
 
 
 def assign(device, rule=None):

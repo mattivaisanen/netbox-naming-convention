@@ -7,6 +7,9 @@ The plugin's records.
 - NamingSeries: bookkeeping, deliberately *not* a NetBoxModel: it is written
   while a device is saved, and an approval plugin must never hold that up.
   One row per series, locked while a number is taken.
+- AssignedName: bookkeeping too. Which device names a rule gave (filled in
+  when the device was added, or suggested and accepted on edit), for the
+  device page and change requests.
 """
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
@@ -23,7 +26,7 @@ from .numbering import MAX_DIGITS, NumberError, parse_ip_pattern, parse_skip
 from .template import Template, TemplateError
 
 __all__ = (
-    'EnforcementChoices', 'NamingRule', 'NamingSeries', 'NumberScopeChoices', 'NumberSourceChoices',
+    'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NamingRule', 'NamingSeries', 'NumberScopeChoices', 'NumberSourceChoices',
     'TagMatchChoices',
 )
 
@@ -111,7 +114,7 @@ class NamingRule(NetBoxModel):
     )
     match_tags = models.ManyToManyField(
         to='extras.Tag', related_name='+', blank=True, verbose_name=_('device tags'),
-        help_text=_('Tags the device must have (for example "ot").'),
+        help_text=_('Tags the device must have.'),
     )
     tag_match = models.CharField(
         verbose_name=_('tag match'), max_length=10, choices=TagMatchChoices, default=TagMatchChoices.ALL,
@@ -128,8 +131,8 @@ class NamingRule(NetBoxModel):
     template = models.CharField(
         verbose_name=_('template'), max_length=200,
         help_text=_(
-            'Literal text, {n} for the number and values such as {site.name|first:2|upper} or '
-            '{rack.name|before:_|optional}. See the documentation for all values and filters.'
+            'Literal text, {n} for the number and values of the device such as {site.slug|upper} or '
+            '{rack.name|before:-|optional}.'
         ),
     )
     number_source = models.CharField(
@@ -145,7 +148,10 @@ class NamingRule(NetBoxModel):
     )
     number_digits = models.PositiveSmallIntegerField(
         verbose_name=_('digits'), default=3, validators=[MinValueValidator(1), MaxValueValidator(MAX_DIGITS)],
-        help_text=_('Numbers are padded with zeros to this many digits (3: 001).'),
+        help_text=_(
+            'Numbers are padded with zeros to this many digits (3 gives 007). Also for numbers from the IP; '
+            '1 leaves them as they are.'
+        ),
     )
     number_first = models.PositiveIntegerField(verbose_name=_('first number'), default=1)
     number_last = models.PositiveIntegerField(
@@ -253,3 +259,50 @@ class NamingSeries(models.Model):
 
     def __str__(self):
         return self.key
+
+
+class AssignedHowChoices(ChoiceSet):
+    AUTO = 'auto'
+    SUGGESTED = 'suggested'
+
+    CHOICES = (
+        (AUTO, _('Filled in by the rule'), 'green'),
+        (SUGGESTED, _('Suggested by the rule and accepted'), 'cyan'),
+    )
+
+
+class AssignedName(models.Model):
+    """A name a rule gave a device. Kept per device and name."""
+    device = models.ForeignKey(to='dcim.Device', on_delete=models.CASCADE, related_name='+')
+    name = models.CharField(verbose_name=_('name'), max_length=64)
+    rule = models.ForeignKey(to=NamingRule, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    #: The rule's name at the time, kept when the rule is deleted.
+    rule_name = models.CharField(verbose_name=_('rule'), max_length=100)
+    how = models.CharField(verbose_name=_('how'), max_length=10, choices=AssignedHowChoices)
+    created = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('-created',)
+        verbose_name = _('assigned name')
+        verbose_name_plural = _('assigned names')
+        constraints = [
+            models.UniqueConstraint(fields=('device', 'name'), name='netbox_naming_convention_assigned_name'),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def get_how_color(self):
+        return AssignedHowChoices.colors.get(self.how)
+
+    @classmethod
+    def record(cls, device, name, rule, how):
+        cls.objects.update_or_create(
+            device=device, name=name, defaults={'rule': rule, 'rule_name': rule.name[:100], 'how': how},
+        )
+
+    @classmethod
+    def lookup(cls, device_id, name):
+        if not device_id or not name:
+            return None
+        return cls.objects.filter(device_id=device_id, name=name).select_related('rule').first()

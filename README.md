@@ -3,27 +3,31 @@
 A NetBox plugin that names devices from rules. A rule says which devices it
 is for (a role or a device type, plus any of site, region, location, tags,
 tenant, platform, status) and how their names are built, for example
-`FI{site.name|first:2|upper}{role.parent.name|first:3|upper}{n}_{rack.name}`.
-That rule gives an access switch in rack JK8 in Tampere the name
-`FITASWI154_JK8`, where 154 is the next free number of the series
-`FITASWI`.
+`{site.slug|upper}-{role.slug|first:2|upper}{n}-{rack.name}`. That rule
+gives a switch in rack R01 at the site `ams1` the name `AMS1-SW014-R01`,
+where 014 is the next free number of the series `AMS1-SW`.
 
 ## What it does
 
 - **Fills in names.** A new device saved without a name gets the name of
   its rule: in the web UI, through the REST API and in CSV imports.
 - **Shows the name on the device form.** When you add a device, the name
-  field is grayed out and fills in as soon as the rule has what it needs
-  (site, role, rack...). A small pencil button next to it unlocks the field
-  so you can type your own name; pressing it again brings the rule's name
-  back. The number is confirmed when you save: if someone took it in the
-  meantime, the device gets the next free one.
+  field is grayed out and locked from the start, and fills in as soon as
+  the rule has what it needs (role, device type, site, rack...). A small
+  pencil button next to it unlocks the field so you can type your own name;
+  pressing it again brings the rule's name back. The number is confirmed
+  when you save: if someone took it in the meantime, the device gets the
+  next free one. When you edit a device whose name follows its rule, the
+  name is grayed out the same way.
 - **Never renames on its own.** When you edit a device and change what its
   name is built from (moving it to another rack, for example), a *Suggest
-  again* button appears under the name. The device keeps its number if it
-  stays in the same series. Nothing changes until you press it and save, and
+  again* button appears under the name, with a hint such as "Naming
+  convention for "Switches" is AMS1-SW###-R02, suggested name: AMS1-SW014-R02".
+  The device keeps its number if it stays in the same series, and a device
+  whose name was changed by hand gets back the number the rule gave it, as
+  long as no other device has taken it. Nothing changes until you press it and save, and
   with netbox-change-approval installed the rename waits for approval like
-  any other edit. The only exception is a device without a name: it is
+  any other edit; the change request says the name came from the rule. The only exception is a device without a name: it is
   named as soon as its rule has what it needs (for example when it gets the
   primary IP its number comes from).
 - **Running numbers per series.** Each rule sets the digits (001 or 0001),
@@ -31,9 +35,12 @@ That rule gives an access switch in rack JK8 in Tampere the name
   numbers of deleted devices are reused (gap filling). Without gap filling a
   deleted device's number never comes back.
 - **Numbers from the IP**, instead of running numbers: a mask such as
-  `*.*.*.N` takes the last octet of the device's primary IP, so the device
-  with 192.168.10.6 is `fitaswi006`. The plugin never picks or changes IP
-  addresses.
+  `*.*.*.N` takes the last octet of the device's primary IP, so with the
+  template `sw{n}` the device with 10.0.0.6 is `sw006`. The plugin never
+  picks or changes IP addresses.
+- **Says where a name came from.** The device's change log entry says
+  "Name from naming rule ..." (after any message you typed), and the device
+  page shows whether the rule filled the name in or suggested it.
 - **Existing names count.** Devices named before the rule existed are read
   (without regard to case), so the next number is right from day one.
 - **Enforcement per rule:** off (only suggest and fill in), warn (names that
@@ -41,6 +48,9 @@ That rule gives an access switch in rack JK8 in Tampere the name
   new device or a rename must follow the rule, and may not reuse a number).
 - **Rule pages** show each series with its highest number and the next name,
   and the devices that don't follow the rule with the name they would get.
+  Tick some of them and *Rename selected to the suggested names* shows old
+  and new names; confirming sends them through NetBox's own device import,
+  so permissions, the change log and approvals work as for any bulk edit.
 
 ## Requirements
 
@@ -98,25 +108,30 @@ first); the first enabled rule that matches a device names it.
 | --- | --- |
 | Roles, device types | What kind of device the rule is for. At least one is required. Child roles match too: a rule for *Switch* covers *Switch / Access*. |
 | Regions, site groups, sites, locations, tenants, platforms, statuses | Optional. Within one field any listed value matches; all fields that have values must match. Child regions and locations match too. |
-| Device tags, tag match | Optional. The device needs all (or any) of the tags. Useful for categories such as `ot`. |
+| Device tags, tag match | Optional. The device needs all (or any) of the tags, for categories of devices that roles don't tell apart. |
 | Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. |
 | Template | How the name is built, see below. |
 | Number source | *Running number* or *From primary IP*. |
-| Digits | Numbers are padded with zeros to this many digits. |
-| First number, last number | The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3). |
-| Numbers never handed out | For example `0, 100-199`. |
-| Fill gaps | On: the lowest free number, including those of deleted devices. Off: one more than the highest number ever handed out. |
-| Number scope | *Shared*: the number counts per text before it, so racks share one run (`FITASWI154_JK8`, `FITASWI155_JK9`). *Whole name*: each full name counts on its own (`FITASWI001_JK8`, `FITASWI001_JK9`). |
-| IP pattern | For *From primary IP*: a mask such as `*.*.*.N` (the octet marked N is the number) or a regular expression with one group, such as `\.([0-9]+)$`. |
+| Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. |
+| First number, last number | Running numbers only. The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3). |
+| Numbers never handed out | Running numbers only. For example `0, 100-199`. |
+| Fill gaps | Running numbers only. On: the lowest number no device has now, including those of deleted devices. Off: one more than the highest number ever handed out, so gaps are never refilled (a name with a free number can still be typed by hand). The plugin can't tell a gap left on purpose from one left by accident: retire numbers on purpose with *Numbers never handed out*, or keep the retired device in NetBox (its number counts as used while it exists). |
+| Number scope | *Shared*: the number counts per text before it, so racks share one run (`AMS1-SW014-R01`, `AMS1-SW015-R02`). *Whole name*: each full name counts on its own (`AMS1-SW001-R01`, `AMS1-SW001-R02`). |
+| IP pattern | *From primary IP* only: a mask such as `*.*.*.N` (the octet marked N is the number) or a regular expression with one group, such as `\.([0-9]+)$`. |
+
+The rule form shows only the number fields that apply to the number source
+you pick.
 | Enforcement | *Off*, *Warn* (default) or *Refuse*, see above. |
 
 ### Templates
 
-Literal text, the number and values of the device in braces:
+Literal text, the number and values of the device in braces. The rule form
+links to a reference page in NetBox (*All values and filters*) with the
+same lists as below.
 
 | Part | Gives |
 | --- | --- |
-| `FITASWI` | the text as written |
+| `SW-` | the text as written |
 | `{n}` | the number, padded to the rule's digits (at most one per template) |
 | `{site.name}`, `{site.slug}`, `{site.facility}` | values of the device's site |
 | `{location.name}`, `{rack.name}`, `{tenant.slug}`, `{platform.name}` | values of other objects the device is in or has |
@@ -133,16 +148,16 @@ Filters change a value, from left to right: `{site.name|first:2|upper}`.
 | --- | --- |
 | `upper`, `lower` | changes case |
 | `first:N`, `last:N` | keeps the first or last N characters |
-| `ascii` | removes accents (Hämeenlinna → Hameenlinna) |
+| `ascii` | removes accents (Zürich → Zurich) |
 | `alnum` | keeps only letters and digits |
 | `nospace` | removes spaces |
 | `replace:old:new` | replaces text (`replace: :-`; leave `new` out to remove) |
 | `default:X` | X when the value is empty |
-| `before:X`, `after:X` | adds X before or after the value, only when there is one (`{rack.name\|before:_}`) |
+| `before:X`, `after:X` | adds X before or after the value, only when there is one (`{rack.name\|before:-}`) |
 | `optional` | leaves the part out when it is empty |
 
 A value that is empty and not `optional` (or `default`) makes the name wait:
-the device form says "Filled in once these are set: rack". A device saved
+the device form says, for example, "Filled in once these are set: rack". A device saved
 without that value is saved without a name, unless the rule refuses names
 that don't fit.
 
@@ -150,11 +165,12 @@ that don't fit.
 
 | Devices | Template | Names |
 | --- | --- | --- |
-| Access switches in Tampere | `FI{site.name\|first:2\|upper}{role.parent.name\|first:3\|upper}{n}_{rack.name}` | `FITASWI154_JK8` |
-| The same, rack optional | `FITASWI{n}{rack.name\|before:_\|optional}` | `FITASWI155`, `FITASWI156_JK9` |
-| OT routers (tag `ot`, priority 10) | `FITAROT{n}` | `FITAROT001` |
-| Printers, 4 digits | `{site.slug\|upper}-PRN{n}` | `TAMPERE-PRN0001` |
-| Switches numbered by IP | `fitaswi{n}`, mask `*.*.*.N` | `fitaswi006` for 192.168.10.6 |
+| Switches, with the rack | `{site.slug\|upper}-SW{n}-{rack.name}` | `AMS1-SW014-R01` |
+| The same, rack optional | `{site.slug\|upper}-SW{n}{rack.name\|before:-\|optional}` | `AMS1-SW015`, `AMS1-SW016-R02` |
+| Codes cut from names | `{region.name\|first:2\|upper}{site.name\|first:3\|upper}{role.parent.name\|first:3\|upper}{n}` | `NEAMSSWI001` (Netherlands, Amsterdam, Switch) |
+| A tagged group (tag `lab`, priority 10) | `LAB-{device_type.model}-{n}` | `LAB-C9300-001` |
+| Printers, 4 digits | `{site.slug\|upper}-PRN{n}` | `AMS1-PRN0001` |
+| Numbered by IP | `{site.slug}-sw{n}`, mask `*.*.*.N` | `ams1-sw006` for 10.0.0.6 |
 
 ## REST API
 
@@ -173,8 +189,10 @@ that don't fit.
 Naming rules are ordinary NetBox objects, so changes to them need approval
 like changes to any other object. A new device is written at once by
 change-approval (marked pending), so it gets its name and number right
-away; a rename waits for approval. The plugin's own record of the numbers
-handed out is never gated.
+away; a rename waits for approval. When the name came from a rule (filled
+in on add, or *Suggest again* on edit), the change request page says so
+above the changes. The plugin's own records (numbers handed out, names
+given) are never gated.
 
 ## License
 

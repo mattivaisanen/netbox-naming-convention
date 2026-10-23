@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+New:
+
+- The rule form links to a reference page in NetBox with every value and
+  filter a template can use.
+- The rule form shows only the number fields that apply: first and last
+  number, numbers never handed out and gap filling for running numbers, the
+  IP pattern for numbers from the IP.
+- The device add form keeps the name locked from the start, until the role
+  and device type show whether a rule names the device. The edit form grays
+  out a name that follows its rule too; the pencil button unlocks it.
+- The device's change log entry says when its name came from a rule, the
+  device page shows whether the rule filled the name in or suggested it, and
+  with netbox-change-approval the change request page says so too.
+- Devices that don't follow their rule can be renamed in bulk from the
+  rule page: tick them, check old and new names, confirm. The renames go
+  through NetBox's device import (change log, approvals).
+- The name hint on the device form says what the convention is, such as
+  "Naming convention for "Switches" is AMS1-SW###-R02, suggested name:
+  AMS1-SW014-R02", instead of only the rule's name.
+
+Fixed:
+
+- The grayed-out name field was hard to tell from a normal one. It is now
+  clearly gray, with a padlock.
+- Examples in the documentation and help texts are generic.
+- On the edit form, typing in the name field changed the suggestion to the
+  next free number. The suggestion now comes from the name the device has.
+- A device renamed by hand was offered a new number. It now gets back the
+  number the rule gave it, while no other device has taken it.
+
 ## 0.1.0 (2026-10-23)
 
 New:

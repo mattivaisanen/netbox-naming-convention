@@ -35,6 +35,7 @@ class NamingRuleTable(NetBoxTable):
 
 class RuleDeviceTable(NetBoxTable):
     """Devices of a rule whose names don't follow it."""
+    pk = columns.ToggleColumn()
     name = tables.Column(linkify=True)
     site = tables.Column(linkify=True)
     rack = tables.Column(linkify=True)
@@ -43,7 +44,7 @@ class RuleDeviceTable(NetBoxTable):
 
     class Meta(NetBoxTable.Meta):
         model = Device
-        fields = ('name', 'site', 'rack', 'role', 'suggested')
+        fields = ('pk', 'name', 'site', 'rack', 'role', 'suggested')
         default_columns = fields
 
     def render_suggested(self, record):

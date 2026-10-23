@@ -6,16 +6,25 @@ document.addEventListener('DOMContentLoaded', function () {
   var MODE = '{{ naming_mode|escapejs }}';
   var DEVICE = '{{ naming_device|escapejs }}';
   var URL = '{{ naming_url|escapejs }}';
+  var LOCKED = '{{ naming_locked|escapejs }}' === 'yes';
   var TEXT = {
     edit: '{{ _("Type a name yourself")|escapejs }}',
     lock: '{{ _("Use the rule&#39;s name")|escapejs }}',
     again: '{{ _("Suggest again")|escapejs }}',
-    fromRule: '{{ _("Name from the rule")|escapejs }}',
+    convention: '{{ _("Naming convention for “{rule}” is {pattern}.")|escapejs }}',
+    suggested: '{{ _("Suggested name: {name}.")|escapejs }}',
     confirmed: '{{ _("The number is confirmed when you save.")|escapejs }}',
-    waiting: '{{ _("Filled in once these are set:")|escapejs }}',
-    typing: '{{ _("You are typing your own name. Rule:")|escapejs }}',
-    suggests: '{{ _("suggests")|escapejs }}'
+    waiting: '{{ _("Filled in once these are set: {missing}.")|escapejs }}',
+    kind: '{{ _("Filled in by a naming rule once the device role and device type are set.")|escapejs }}',
+    typing: '{{ _("You are typing your own name.")|escapejs }}'
   };
+  function say(text, values) {
+    return text.replace(/\{(\w+)\}/g, function (all, key) { return key in values ? values[key] : all; });
+  }
+  function convention() {
+    var rule = last.rule;
+    return say(TEXT.convention, {rule: rule.name, pattern: last.pattern || rule.name});
+  }
   var FIELDS = ['site', 'location', 'rack', 'role', 'device_type', 'tenant', 'platform', 'status', 'serial',
                 'asset_tag', 'primary_ip4', 'primary_ip6'];
 
@@ -28,7 +37,18 @@ document.addEventListener('DOMContentLoaded', function () {
   var group = document.createElement('div');
   group.className = 'input-group';
   input.parentNode.insertBefore(group, input);
+  var padlock = document.createElement('span');
+  padlock.className = 'input-group-text';
+  padlock.hidden = true;
+  padlock.innerHTML = '<i class="mdi mdi-lock-outline"></i>';
+  group.appendChild(padlock);
   group.appendChild(input);
+  var again = document.createElement('button');
+  again.type = 'button';
+  again.className = 'btn btn-outline-primary';
+  again.textContent = TEXT.again;
+  again.hidden = true;
+  group.appendChild(again);
   var button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn btn-outline-secondary';
@@ -38,9 +58,12 @@ document.addEventListener('DOMContentLoaded', function () {
   note.className = 'form-text';
   group.parentNode.insertBefore(note, group.nextSibling);
 
-  // On add the name starts locked (grayed, filled in by the rule) unless the
-  // form came back with a name typed in.
-  var locked = MODE === 'add' && !input.value;
+  // Add: the name starts locked (grayed, filled in by the rule) unless the
+  // form came back with a name typed in. Edit: locked when the name follows
+  // its rule (the server says so).
+  var locked = MODE === 'add' ? !input.value : LOCKED;
+  var keep = input.value;  // edit: the name a re-lock goes back to
+  var original = input.value;  // edit: the name the device has
   var last = null;
   var lastSent = null;
   var first = true;
@@ -59,7 +82,9 @@ document.addEventListener('DOMContentLoaded', function () {
       if (key.indexOf('cf_') === 0 && value !== '') { cf[key.slice(3)] = value; }
     });
     out.custom_fields = cf;
-    if (DEVICE) { out.device = Number(DEVICE); out.name = input.value; }
+    // Edit: suggest from the name the device has, not from what is typed, so
+    // a device that stays in its series keeps its number.
+    if (DEVICE) { out.device = Number(DEVICE); out.name = original; }
     return out;
   }
 
@@ -70,65 +95,107 @@ document.addEventListener('DOMContentLoaded', function () {
     button.appendChild(icon);
     button.title = title;
     button.setAttribute('aria-label', title);
+    button.hidden = false;
   }
 
-  // Sent with a name the rule filled in, so the server picks its number
+  function hidden(name, value) {
+    var el = document.createElement('input');
+    el.type = 'hidden';
+    el.name = name;
+    el.value = value;
+    return el;
+  }
+  // Add: sent with a name the rule filled in, so the server picks its number
   // again at save instead of treating it as typed (signals.py).
-  var marker = document.createElement('input');
-  marker.type = 'hidden';
-  marker.name = '_naming_auto';
-  marker.value = '1';
+  var marker = hidden('_naming_auto', '1');
+  // Edit: the name "Suggest again" put in, so the change shows it came from
+  // the rule.
+  var accepted = hidden('_naming_suggested', '');
 
   function lock(on) {
     input.readOnly = on;
-    if (on && !marker.parentNode) { form.appendChild(marker); }
-    if (!on && marker.parentNode) { marker.parentNode.removeChild(marker); }
-    input.style.backgroundColor = on ? 'var(--tblr-bg-surface-secondary, #f1f3f5)' : '';
+    padlock.hidden = !on;
+    input.style.backgroundColor = on ? 'var(--tblr-secondary-bg, #e5e7eb)' : '';
+    input.style.color = on ? 'var(--tblr-secondary, #6b7280)' : '';
+    if (MODE === 'add') {
+      if (on && !marker.parentNode) { form.appendChild(marker); }
+      if (!on && marker.parentNode) { marker.parentNode.removeChild(marker); }
+    }
+  }
+
+  function kindsSet() {
+    var data = new FormData(form);
+    return !!data.get('role') && !!data.get('device_type');
+  }
+
+  function showAdd() {
+    var rule = last && last.rule;
+    again.hidden = true;
+    if (!rule) {
+      if (locked && !kindsSet()) {
+        // Nothing to go on yet: keep the field for the rule.
+        lock(true);
+        input.value = '';
+        note.textContent = TEXT.kind;
+        setIcon('mdi-pencil', TEXT.edit);
+        return;
+      }
+      // No rule for this device: the name field as NetBox has it.
+      if (locked) { input.value = ''; }
+      lock(false);
+      input.placeholder = '';
+      button.hidden = true;
+      note.textContent = '';
+      return;
+    }
+    if (locked) {
+      lock(true);
+      input.value = last.ready ? last.name : '';
+      input.placeholder = '';
+      if (last.ready) {
+        note.textContent = convention() + ' ' + TEXT.confirmed;
+      } else if (last.error) {
+        note.textContent = last.error;
+      } else {
+        note.textContent = convention() + ' ' + say(TEXT.waiting, {missing: last.missing.join(', ')});
+      }
+      setIcon('mdi-pencil', TEXT.edit);
+    } else {
+      lock(false);
+      input.placeholder = last.ready ? last.name : '';
+      note.textContent = TEXT.typing + ' ' + convention() +
+        (last.ready ? ' ' + say(TEXT.suggested, {name: last.name}) : '');
+      setIcon('mdi-lock-outline', TEXT.lock);
+    }
+  }
+
+  function showEdit() {
+    // Never change the name on its own: offer the rule's name.
+    var rule = last && last.rule;
+    lock(locked);
+    if (locked) {
+      input.value = keep;
+      setIcon('mdi-pencil', TEXT.edit);
+    } else if (rule) {
+      setIcon('mdi-lock-outline', TEXT.lock);
+    } else {
+      button.hidden = true;
+    }
+    var differs = rule && last.ready && last.name !== input.value;
+    again.hidden = !differs;
+    if (differs) {
+      note.textContent = convention() + ' ' + say(TEXT.suggested, {name: last.name});
+    } else if (rule && last.error) {
+      note.textContent = last.error;
+    } else if (rule && last.ready) {
+      note.textContent = convention();
+    } else {
+      note.textContent = '';
+    }
   }
 
   function show() {
-    var rule = last && last.rule;
-    if (MODE === 'add') {
-      if (!rule) {
-        // No rule for this device (yet): the name field as NetBox has it.
-        if (locked) { input.value = ''; }
-        lock(false);
-        input.placeholder = '';
-        button.hidden = true;
-        note.textContent = '';
-        return;
-      }
-      button.hidden = false;
-      if (locked) {
-        lock(true);
-        input.value = last.ready ? last.name : '';
-        input.placeholder = '';
-        if (last.ready) {
-          note.textContent = TEXT.fromRule + ' "' + rule.name + '". ' + TEXT.confirmed;
-        } else if (last.error) {
-          note.textContent = last.error;
-        } else {
-          note.textContent = TEXT.waiting + ' ' + last.missing.join(', ') + ' (' + rule.name + ')';
-        }
-        setIcon('mdi-pencil', TEXT.edit);
-      } else {
-        lock(false);
-        input.placeholder = last.ready ? last.name : '';
-        note.textContent = TEXT.typing + ' "' + rule.name + '".';
-        setIcon('mdi-lock-outline', TEXT.lock);
-      }
-      return;
-    }
-    // Edit: never change the name on its own; offer the rule's name.
-    if (!rule || !last.ready || last.name === input.value) {
-      button.hidden = true;
-      note.textContent = rule && last.error ? last.error : '';
-      return;
-    }
-    button.hidden = false;
-    button.textContent = TEXT.again;
-    button.title = TEXT.again;
-    note.textContent = '"' + rule.name + '" ' + TEXT.suggests + ' ' + last.name + '.';
+    if (MODE === 'add') { showAdd(); } else { showEdit(); }
   }
 
   function ask() {
@@ -159,24 +226,35 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   button.addEventListener('click', function () {
-    if (MODE === 'add') {
-      locked = !locked;
-      show();
-      if (!locked) { input.focus(); input.select(); }
-      return;
+    if (MODE === 'edit' && !locked) {
+      // Back to the name the field had when it was locked.
+      input.value = keep;
     }
-    if (last && last.ready) {
-      input.value = last.name;
-      show();
-    }
+    locked = !locked;
+    show();
+    if (!locked) { input.focus(); input.select(); }
+  });
+  again.addEventListener('click', function () {
+    if (!last || !last.ready) { return; }
+    input.value = last.name;
+    keep = last.name;
+    accepted.value = last.name;
+    if (!accepted.parentNode) { form.appendChild(accepted); }
+    locked = true;
+    show();
   });
   form.addEventListener('change', function (event) {
     if (event.target !== input) { soon(); }
   });
-  input.addEventListener('input', function () { if (MODE === 'edit') { show(); } });
+  input.addEventListener('input', function () {
+    if (!input.readOnly && MODE === 'add') { locked = false; }
+    if (MODE === 'edit') { show(); }
+  });
   // Selects driven by TomSelect don't always send a change event the form
   // sees; look for changed values now and then too.
   setInterval(ask, 1500);
+  if (locked) { lock(true); }
+  if (MODE === 'add' && locked) { note.textContent = TEXT.kind; setIcon('mdi-pencil', TEXT.edit); }
   ask();
 });
 </script>

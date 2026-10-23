@@ -75,7 +75,15 @@
     <div class="card">
       <h2 class="card-header">{% blocktrans with n=drifted_count %}Not following this rule ({{ n }}){% endblocktrans %}</h2>
       {% if drifted_count %}
-        {% render_table drifted_table 'inc/table.html' %}
+        <form action="{% url 'plugins:netbox_naming_convention:namingrule_rename' pk=object.pk %}" method="post">
+          {% csrf_token %}
+          {% render_table drifted_table 'inc/table.html' %}
+          {% if perms.dcim.change_device %}
+          <div class="card-footer text-end">
+            <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-rename-outline"></i> {% trans "Rename selected to the suggested names" %}</button>
+          </div>
+          {% endif %}
+        </form>
       {% else %}
         <div class="card-body text-muted">{% trans "Every device of this rule follows it." %}</div>
       {% endif %}

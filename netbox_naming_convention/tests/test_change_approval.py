@@ -48,6 +48,23 @@ class ChangeApprovalTests(NetBoxData, TestCase):
         self.assertEqual(device.name, 'FITASWI001_JK8')
         self.assertTrue(ChangeRequest.objects.filter(object_id=device.pk, action='create', status='pending').exists())
         self.assertEqual(NamingSeries.objects.get(key='fitaswi').high_water, 1)
+        change = ChangeRequest.objects.get(object_id=device.pk, action='create')
+        page = self.client.get(change.get_absolute_url())
+        self.assertContains(page, 'was filled in by the naming rule "Tampere switches"')
+
+    def test_suggested_rename_shows_on_the_change_request(self):
+        from netbox_change_approval.context import applying_change_on
+        from netbox_change_approval.models import ChangeRequest
+
+        with applying_change_on():
+            device = Device.objects.create(name='FITASWI001_JK8', site=self.tampere, role=self.access,
+                                           device_type=self.c9300, rack=self.jk8)
+        self.client.post(reverse('dcim:device_edit', args=[device.pk]), self.form(
+            name='FITASWI001_JK9', rack=self.jk9.pk, _naming_suggested='FITASWI001_JK9',
+        ))
+        change = ChangeRequest.objects.get(object_id=device.pk, action='update', status='pending')
+        page = self.client.get(change.get_absolute_url())
+        self.assertContains(page, 'was suggested by the naming rule "Tampere switches"')
 
     def test_rename_waits_for_approval(self):
         from netbox_change_approval.models import ChangeRequest

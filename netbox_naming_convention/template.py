@@ -9,7 +9,7 @@ A template is literal text with parts in braces:
   filters from left to right.
 
 ``{{`` and ``}}`` are literal braces. Everything else is literal text, so
-``FITASWI{n}`` is a valid template with no values at all.
+``SW{n}`` is a valid template with no values at all.
 
 The text before ``{n}`` is the *prefix*, the text after it the *suffix*. A
 rule's series is its prefix (number scope "shared") or prefix + suffix
@@ -22,7 +22,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-__all__ = ('Template', 'TemplateError', 'Rendered', 'ROOTS', 'ATTRIBUTES', 'FILTERS')
+__all__ = ('Template', 'TemplateError', 'Rendered', 'ROOTS', 'ATTRIBUTES', 'FILTERS', 'NUMBER')
 
 
 class TemplateError(ValueError):
@@ -67,6 +67,9 @@ FILTERS = {
     'replace': 2,
 }
 
+#: Stands for the number in Rendered.pattern.
+NUMBER = '\x00'
+
 _TOKEN = re.compile(r'\{\{|\}\}|\{([^{}]*)\}|[{}]')
 
 
@@ -100,6 +103,9 @@ class Rendered:
     has_number: bool = False
     #: Paths whose values are missing (the name waits for them).
     missing: list = field(default_factory=list)
+    #: The name with NUMBER where the number goes and <rack> for a missing
+    #: value: what the rule makes of this device, for messages.
+    pattern: str = ''
 
     @property
     def ready(self):
@@ -260,15 +266,19 @@ class Template:
         for part in self.parts:
             if part.kind == 'number':
                 before = False
+                out.pattern += NUMBER
                 continue
             if part.kind == 'text':
                 value = part.text
+                out.pattern += value
             else:
                 raw = resolve(part.path)
                 raw = '' if raw is None else str(raw)
                 if not raw and not part.optional:
                     out.missing.append(part.source)
+                    out.pattern += f'<{part.source}>'
                 value = apply_filters(raw, part.filters) if (raw or part.optional) else ''
+                out.pattern += value
             if before:
                 out.prefix += value
             else:

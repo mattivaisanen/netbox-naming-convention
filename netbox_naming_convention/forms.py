@@ -1,4 +1,6 @@
 from django import forms
+from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from dcim.choices import DeviceStatusChoices
@@ -10,6 +12,8 @@ from utilities.forms.fields import (
     CommentField, DynamicModelMultipleChoiceField, JSONField, TagFilterField,
 )
 from utilities.forms.rendering import FieldSet
+from utilities.forms.utils import get_field_value
+from utilities.forms.widgets import HTMXSelect
 
 from .models import EnforcementChoices, NamingRule, NumberSourceChoices
 
@@ -34,7 +38,7 @@ class NamingRuleForm(NetBoxModelForm):
     statuses = forms.MultipleChoiceField(label=_('Statuses'), choices=DeviceStatusChoices, required=False)
     match_tags = DynamicModelMultipleChoiceField(
         label=_('Device tags'), queryset=Tag.objects.all(), required=False,
-        help_text=_('Tags the device must have (for example "ot").'),
+        help_text=_('Tags the device must have.'),
     )
     constraint = JSONField(label=_('Advanced condition'), required=False)
     comments = CommentField()
@@ -64,7 +68,25 @@ class NamingRuleForm(NetBoxModelForm):
         )
         widgets = {
             'template': forms.TextInput(attrs={'class': 'font-monospace'}),
+            # Changing the source draws the form again with its own fields.
+            'number_source': HTMXSelect(),
         }
+
+    #: Fields that mean nothing for the other number source.
+    SEQUENCE_ONLY = ('number_first', 'number_last', 'skip_numbers', 'fill_gaps')
+    IP_ONLY = ('ip_pattern',)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['template'].help_text = format_html(
+            '{} <a href="{}" target="_blank">{}</a>',
+            self.fields['template'].help_text,
+            reverse('plugins:netbox_naming_convention:reference'),
+            _('All values and filters'),
+        )
+        source = get_field_value(self, 'number_source') or NumberSourceChoices.SEQUENCE
+        for name in self.IP_ONLY if source == NumberSourceChoices.SEQUENCE else self.SEQUENCE_ONLY:
+            del self.fields[name]
 
     def clean(self):
         super().clean()
