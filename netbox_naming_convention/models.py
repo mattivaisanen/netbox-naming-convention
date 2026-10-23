@@ -26,7 +26,8 @@ from .numbering import MAX_DIGITS, NumberError, parse_ip_pattern, parse_skip
 from .template import Template, TemplateError, parse_name_filters
 
 __all__ = (
-    'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NamingRule', 'NamingSeries', 'NumberScopeChoices', 'NumberSourceChoices',
+    'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NamingRule', 'RequiredValueChoices', 'NamingSeries',
+    'NumberScopeChoices', 'NumberSourceChoices',
     'TagMatchChoices',
 )
 
@@ -61,6 +62,36 @@ class EnforcementChoices(ChoiceSet):
         (WARN, _('Warn: flag names that do not fit'), 'yellow'),
         (REFUSE, _('Refuse: new names must fit'), 'red'),
     )
+
+
+class RequiredValueChoices(ChoiceSet):
+    """Device fields a rule can wait for before it names the device."""
+    SITE = 'site'
+    LOCATION = 'location'
+    RACK = 'rack'
+    ROLE = 'role'
+    DEVICE_TYPE = 'device_type'
+    TENANT = 'tenant'
+    PLATFORM = 'platform'
+    SERIAL = 'serial'
+    ASSET_TAG = 'asset_tag'
+
+    CHOICES = (
+        (SITE, _('Site')),
+        (LOCATION, _('Location')),
+        (RACK, _('Rack')),
+        (ROLE, _('Device role')),
+        (DEVICE_TYPE, _('Device type')),
+        (TENANT, _('Tenant')),
+        (PLATFORM, _('Platform')),
+        (SERIAL, _('Serial number')),
+        (ASSET_TAG, _('Asset tag')),
+    )
+
+
+def default_required_values():
+    """The fields NetBox's device form requires (status always has a value)."""
+    return [RequiredValueChoices.SITE, RequiredValueChoices.ROLE, RequiredValueChoices.DEVICE_TYPE]
 
 
 class TagMatchChoices(ChoiceSet):
@@ -136,6 +167,14 @@ class NamingRule(NetBoxModel):
         help_text=_(
             'Literal text, {n} for the number and values of the device such as {site.slug|upper} or '
             '{rack.name|before:-|optional}.'
+        ),
+    )
+    required_values = ArrayField(
+        base_field=models.CharField(max_length=20, choices=RequiredValueChoices),
+        blank=True, default=default_required_values, verbose_name=_('wait for'),
+        help_text=_(
+            'The name is filled in only once these are set, besides the values the template uses. New rules '
+            'wait for the fields the device form requires.'
         ),
     )
     name_filters = models.CharField(

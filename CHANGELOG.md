@@ -4,6 +4,11 @@
 
 New:
 
+- *Wait for* per rule: the fields that must be set before the name is
+  filled in. New rules wait for site, device role and device type.
+- The hint under the device name is on separate lines: the rule, what
+  names look like with the missing parts marked (`[Rack]`), and what it
+  still waits for, by the form's own field names.
 - Filters for the whole name per rule, such as `ascii|nospace|lower`, so
   you don't have to repeat them on every value of the template.
 - The rule form links to a reference page in NetBox with every value and

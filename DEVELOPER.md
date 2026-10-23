@@ -37,6 +37,17 @@ Roles, regions, locations and site groups match their ancestors by walking
 trees. The advanced condition is evaluated in memory with
 the common lookups, like change-approval's `matching.py`.
 
+## Waiting for values
+
+`NamingRule.required_values` lists device fields (`RequiredValueChoices`)
+the rule needs besides its template's values. `naming._render()` puts the
+empty ones first in `missing`, so they behave exactly like an empty template
+value: the form waits, a save leaves the device unnamed (or is refused with
+enforcement *refuse*). The default is `default_required_values()`: site,
+role and device type, what NetBox's device form requires. The form script
+shows missing keys by the form's own labels (TomSelect moves a select's
+label to `id_<field>-ts-control`).
+
 ## Filters for the whole name
 
 `NamingRule.name_filters` (`template.parse_name_filters()`, limited to

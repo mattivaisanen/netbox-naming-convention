@@ -44,8 +44,9 @@ class NamingRuleSerializer(NetBoxModelSerializer):
         fields = (
             'id', 'url', 'display', 'name', 'description', 'enabled', 'priority', 'roles', 'device_types',
             'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms', 'statuses', 'match_tags',
-            'tag_match', 'constraint', 'template', 'name_filters', 'number_source', 'ip_pattern', 'number_digits', 'number_first',
-            'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'enforcement', 'comments', 'tags',
+            'tag_match', 'constraint', 'template', 'name_filters', 'required_values', 'number_source', 'ip_pattern',
+            'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'enforcement',
+            'comments', 'tags',
             'custom_fields', 'created', 'last_updated',
         )
         brief_fields = ('id', 'url', 'display', 'name', 'description')

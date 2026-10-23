@@ -9,22 +9,80 @@ document.addEventListener('DOMContentLoaded', function () {
   var LOCKED = '{{ naming_locked|escapejs }}' === 'yes';
   var TEXT = {
     edit: '{{ _("Type a name yourself")|escapejs }}',
-    lock: '{{ _("Use the rule&#39;s name")|escapejs }}',
+    lock: '{{ _("Use the name from the rule")|escapejs }}',
     again: '{{ _("Suggest again")|escapejs }}',
-    convention: '{{ _("Naming convention for “{rule}” is {pattern}.")|escapejs }}',
-    suggested: '{{ _("Suggested name: {name}.")|escapejs }}',
+    rule: '{{ _("Naming convention")|escapejs }}',
+    pattern: '{{ _("Names look like")|escapejs }}',
+    suggested: '{{ _("Suggested name")|escapejs }}',
+    waiting: '{{ _("Filled in once set")|escapejs }}',
     confirmed: '{{ _("The number is confirmed when you save.")|escapejs }}',
-    waiting: '{{ _("Filled in once these are set: {missing}.")|escapejs }}',
     kind: '{{ _("Filled in by a naming rule once the device role and device type are set.")|escapejs }}',
-    typing: '{{ _("You are typing your own name.")|escapejs }}'
+    typing: '{{ _("You are typing your own name.")|escapejs }}',
+    parent: '{{ _("parent")|escapejs }}'
   };
-  function say(text, values) {
-    return text.replace(/\{(\w+)\}/g, function (all, key) { return key in values ? values[key] : all; });
+
+  // What a missing value is called on this form: "rack" -> "Rack",
+  // "role.parent" -> "Device role (parent)".
+  function labelFor(key) {
+    var parts = key.split('.');
+    // TomSelect moves a select's label to its own control (id_rack-ts-control).
+    var label = document.querySelector('label[for="id_' + parts[0] + '"]') ||
+                document.querySelector('label[for="id_' + parts[0] + '-ts-control"]');
+    var text = label ? label.textContent.replace(/\*/g, '').trim() : parts[0];
+    var rest = parts.slice(1);
+    if (rest.length && rest.every(function (p) { return p === 'parent'; })) { return text + ' (' + TEXT.parent + ')'; }
+    return rest.length ? text + ' ' + rest.join('.') : text;
   }
-  function convention() {
-    var rule = last.rule;
-    return say(TEXT.convention, {rule: rule.name, pattern: last.pattern || rule.name});
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) { node.className = className; }
+    if (text !== undefined) { node.textContent = text; }
+    return node;
   }
+
+  // The pattern with missing values shown as muted placeholders.
+  function patternNode(pattern) {
+    var code = el('span', 'font-monospace');
+    pattern.split(/<([^<>]+)>/).forEach(function (piece, i) {
+      if (i % 2) {
+        code.appendChild(el('span', 'text-secondary fst-italic', '[' + labelFor(piece) + ']'));
+      } else if (piece) {
+        code.appendChild(document.createTextNode(piece));
+      }
+    });
+    return code;
+  }
+
+  // Lines under the name field: [label, text or node], or a plain string.
+  function setNote(lines) {
+    note.textContent = '';
+    lines.forEach(function (line) {
+      var row = el('div');
+      if (typeof line === 'string') {
+        row.textContent = line;
+      } else {
+        row.appendChild(el('span', 'text-secondary', line[0] + ': '));
+        row.appendChild(typeof line[1] === 'string' ? el('span', '', line[1]) : line[1]);
+      }
+      note.appendChild(row);
+    });
+  }
+
+  function about() {
+    var lines = [[TEXT.rule, last.rule.name]];
+    if (last.pattern) { lines.push([TEXT.pattern, patternNode(last.pattern)]); }
+    return lines;
+  }
+
+  function waitingLine() {
+    return [TEXT.waiting, last.missing.map(labelFor).join(', ')];
+  }
+
+  function suggestedLine() {
+    return [TEXT.suggested, el('span', 'font-monospace', last.name)];
+  }
+
   var FIELDS = ['site', 'location', 'rack', 'role', 'device_type', 'tenant', 'platform', 'status', 'serial',
                 'asset_tag', 'primary_ip4', 'primary_ip6'];
 
@@ -136,7 +194,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Nothing to go on yet: keep the field for the rule.
         lock(true);
         input.value = '';
-        note.textContent = TEXT.kind;
+        setNote([TEXT.kind]);
         setIcon('mdi-pencil', TEXT.edit);
         return;
       }
@@ -145,7 +203,7 @@ document.addEventListener('DOMContentLoaded', function () {
       lock(false);
       input.placeholder = '';
       button.hidden = true;
-      note.textContent = '';
+      setNote([]);
       return;
     }
     if (locked) {
@@ -153,18 +211,17 @@ document.addEventListener('DOMContentLoaded', function () {
       input.value = last.ready ? last.name : '';
       input.placeholder = '';
       if (last.ready) {
-        note.textContent = convention() + ' ' + TEXT.confirmed;
+        setNote(about().concat([TEXT.confirmed]));
       } else if (last.error) {
-        note.textContent = last.error;
+        setNote(about().concat([last.error]));
       } else {
-        note.textContent = convention() + ' ' + say(TEXT.waiting, {missing: last.missing.join(', ')});
+        setNote(about().concat([waitingLine()]));
       }
       setIcon('mdi-pencil', TEXT.edit);
     } else {
       lock(false);
       input.placeholder = last.ready ? last.name : '';
-      note.textContent = TEXT.typing + ' ' + convention() +
-        (last.ready ? ' ' + say(TEXT.suggested, {name: last.name}) : '');
+      setNote([TEXT.typing].concat(about(), last.ready ? [suggestedLine()] : []));
       setIcon('mdi-lock-outline', TEXT.lock);
     }
   }
@@ -184,13 +241,15 @@ document.addEventListener('DOMContentLoaded', function () {
     var differs = rule && last.ready && last.name !== input.value;
     again.hidden = !differs;
     if (differs) {
-      note.textContent = convention() + ' ' + say(TEXT.suggested, {name: last.name});
+      setNote(about().concat([suggestedLine()]));
     } else if (rule && last.error) {
-      note.textContent = last.error;
+      setNote(about().concat([last.error]));
     } else if (rule && last.ready) {
-      note.textContent = convention();
+      setNote(about());
+    } else if (rule && last.missing.length) {
+      setNote(about().concat([waitingLine()]));
     } else {
-      note.textContent = '';
+      setNote([]);
     }
   }
 
@@ -254,7 +313,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // sees; look for changed values now and then too.
   setInterval(ask, 1500);
   if (locked) { lock(true); }
-  if (MODE === 'add' && locked) { note.textContent = TEXT.kind; setIcon('mdi-pencil', TEXT.edit); }
+  if (MODE === 'add' && locked) { setNote([TEXT.kind]); setIcon('mdi-pencil', TEXT.edit); }
   ask();
 });
 </script>

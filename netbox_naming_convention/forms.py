@@ -15,7 +15,7 @@ from utilities.forms.rendering import FieldSet
 from utilities.forms.utils import get_field_value
 from utilities.forms.widgets import HTMXSelect
 
-from .models import EnforcementChoices, NamingRule, NumberSourceChoices
+from .models import EnforcementChoices, NamingRule, NumberSourceChoices, RequiredValueChoices
 
 
 class NamingRuleForm(NetBoxModelForm):
@@ -36,6 +36,10 @@ class NamingRuleForm(NetBoxModelForm):
         label=_('Platforms'), queryset=Platform.objects.all(), required=False,
     )
     statuses = forms.MultipleChoiceField(label=_('Statuses'), choices=DeviceStatusChoices, required=False)
+    required_values = forms.MultipleChoiceField(
+        label=_('Wait for'), choices=RequiredValueChoices, required=False,
+        help_text=NamingRule._meta.get_field('required_values').help_text,
+    )
     match_tags = DynamicModelMultipleChoiceField(
         label=_('Device tags'), queryset=Tag.objects.all(), required=False,
         help_text=_('Tags the device must have.'),
@@ -50,7 +54,7 @@ class NamingRuleForm(NetBoxModelForm):
             'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms', 'statuses', 'match_tags',
             'tag_match', 'constraint', name=_('Other conditions (optional)'),
         ),
-        FieldSet('template', 'name_filters', name=_('Name')),
+        FieldSet('template', 'name_filters', 'required_values', name=_('Name')),
         FieldSet(
             'number_source', 'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps',
             'number_scope', 'ip_pattern', name=_('Number'),
@@ -63,8 +67,9 @@ class NamingRuleForm(NetBoxModelForm):
         fields = (
             'name', 'description', 'enabled', 'priority', 'roles', 'device_types', 'regions', 'site_groups',
             'sites', 'locations', 'tenants', 'platforms', 'statuses', 'match_tags', 'tag_match', 'constraint',
-            'template', 'name_filters', 'number_source', 'ip_pattern', 'number_digits', 'number_first',
-            'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'enforcement', 'comments', 'tags',
+            'template', 'name_filters', 'required_values', 'number_source', 'ip_pattern', 'number_digits',
+            'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'enforcement', 'comments',
+            'tags',
         )
         widgets = {
             'template': forms.TextInput(attrs={'class': 'font-monospace'}),

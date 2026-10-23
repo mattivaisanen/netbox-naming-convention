@@ -38,6 +38,19 @@ class NamingTests(NetBoxData, TestCase):
         self.rule(roles=[self.switch], match_tags=[self.ot], name='OT switches', template='OT-SW{n}')
         self.assertEqual(self.device(rack=self.jk8, tags=[self.ot]).name, 'SW001')
 
+    def test_rule_waits_for_its_required_values(self):
+        self.assertEqual(self.switches.required_values, ['site', 'role', 'device_type'])
+        self.switches.template = 'SW{n}'
+        self.switches.required_values = ['site', 'role', 'device_type', 'rack']
+        self.switches.save()
+        waiting = suggest(self.device(save=False))
+        self.assertEqual((waiting.ready, waiting.missing), (False, ['rack']))
+        self.assertIsNone(self.device().name)
+        self.assertEqual(self.device(rack=self.jk8).name, 'SW001')
+        self.switches.required_values = []
+        self.switches.save()
+        self.assertEqual(self.device().name, 'SW002')
+
     def test_filters_for_the_whole_name(self):
         self.switches.template = '{site.name} SW-{n}{rack.name|before:-|optional}'
         self.switches.name_filters = 'ascii|nospace|lower'

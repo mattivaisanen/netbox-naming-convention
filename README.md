@@ -115,6 +115,7 @@ name. Set different priorities when you want a fixed order.
 | Device tags, tag match | Optional. The device needs all (or any) of the tags, for categories of devices that roles don't tell apart. |
 | Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. |
 | Template | How the name is built, see below. |
+| Wait for | The fields that must be set before the name is filled in, besides the values the template uses: site, location, rack, device role, device type, tenant, platform, serial number, asset tag. New rules wait for site, device role and device type (what the device form requires). |
 | Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |
 | Number source | *Running number* or *From primary IP*. |
 | Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. |
@@ -162,8 +163,10 @@ whole name instead, put it in the rule's *Filters for the whole name*.
 | `before:X`, `after:X` | adds X before or after the value, only when there is one (`{rack.name\|before:-}`) |
 | `optional` | leaves the part out when it is empty |
 
-A value that is empty and not `optional` (or `default`) makes the name wait:
-the device form says, for example, "Filled in once these are set: rack". A device saved
+A value that is empty and not `optional` (or `default`) makes the name wait,
+like the rule's *Wait for* fields: under the name the device form shows the
+rule, what names look like (`AMS1-SW###-[Rack]`) and what it still waits
+for. A device saved
 without that value is saved without a name, unless the rule refuses names
 that don't fit.
 

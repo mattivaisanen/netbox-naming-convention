@@ -98,6 +98,12 @@ def _primary_ip(device):
     return _related(device, 'primary_ip4') or _related(device, 'primary_ip6')
 
 
+def _has_value(device, key):
+    if key in ('serial', 'asset_tag'):
+        return bool(getattr(device, key, None))
+    return _related(device, key) is not None
+
+
 def _render(device, rule):
     """(Suggestion with prefix/suffix/series/missing filled in, has_number)."""
     out = Suggestion(rule=rule)
@@ -110,7 +116,9 @@ def _render(device, rule):
     filters = rule.parsed_name_filters
     out.prefix = filter_name(rendered.prefix, filters)
     out.suffix = filter_name(rendered.suffix, filters)
-    out.missing = list(rendered.missing)
+    # Fields the rule waits for, in the rule's order, before the template's own.
+    waiting = [key for key in rule.required_values if not _has_value(device, key)]
+    out.missing = waiting + [m for m in rendered.missing if m not in waiting]
     out.pattern = filter_name(rendered.pattern, filters).replace(NUMBER, '#' * rule.number_digits)
     if template.has_number:
         out.series = series_key(out.prefix, out.suffix, rule.number_scope)
