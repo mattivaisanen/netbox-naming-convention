@@ -1,0 +1,57 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Name template reference" %}{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col col-12 col-xl-10">
+    <p class="text-muted">
+      {% blocktrans trimmed %}
+        A template is literal text with parts in braces. A value can be changed by filters, applied from
+        left to right: <code>{site.name|first:3|upper}</code>. A value that is empty makes the name wait for
+        it (the device form says what is missing), unless the part has <code>optional</code> or
+        <code>default</code>.
+      {% endblocktrans %}
+    </p>
+    <div class="card">
+      <h2 class="card-header">{% trans "Text and number" %}</h2>
+      <table class="table table-hover attr-table">
+        {% for syntax, text in other %}
+        <tr><th scope="row" class="font-monospace">{{ syntax }}</th><td>{{ text }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "Values" %}</h2>
+      <div class="card-body text-muted pb-0">
+        {% blocktrans trimmed %}
+          A value is a place and an attribute. <code>parent</code> goes one level up in roles, regions,
+          site groups and locations; <code>cf.&lt;name&gt;</code> reads a custom field.
+        {% endblocktrans %}
+      </div>
+      <table class="table table-hover attr-table">
+        {% for syntax, text in values %}
+        <tr><th scope="row" class="font-monospace">{{ syntax }}</th><td>{{ text }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "Filters" %}</h2>
+      <div class="card-body text-muted pb-0">
+        {% blocktrans trimmed %}
+          <code>upper</code>, <code>lower</code>, <code>ascii</code>, <code>alnum</code>, <code>nospace</code> and
+          <code>replace</code> also work on the whole name: put them in the rule's <em>Filters for the whole
+          name</em>, such as <code>ascii|nospace|lower</code>. They never change the number.
+        {% endblocktrans %}
+      </div>
+      <table class="table table-hover">
+        <thead><tr><th>{% trans "Filter" %}</th><th>{% trans "Does" %}</th><th>{% trans "Example" %}</th></tr></thead>
+        {% for name, text, example in filters %}
+        <tr><td class="font-monospace">{{ name }}</td><td>{{ text }}</td><td class="font-monospace">{{ example }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

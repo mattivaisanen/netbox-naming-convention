@@ -1,0 +1,95 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load render_table from django_tables2 %}
+{% load i18n %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Naming rule" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Name" %}</th><td>{{ object.name }}</td></tr>
+        <tr><th scope="row">{% trans "Enabled" %}</th><td>{% checkmark object.enabled %}</td></tr>
+        <tr><th scope="row">{% trans "Priority" %}</th><td>{{ object.priority }}</td></tr>
+        <tr><th scope="row">{% trans "Template" %}</th><td class="font-monospace">{{ object.template }}</td></tr>
+        <tr><th scope="row">{% trans "Filters for the whole name" %}</th><td class="font-monospace">{{ object.name_filters|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Wait for" %}</th><td>{% for value in object.required_values %}{{ value }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Enforcement" %}</th><td>{% badge object.get_enforcement_display bg_color=object.get_enforcement_color %}</td></tr>
+        <tr><th scope="row">{% trans "Description" %}</th><td>{{ object.description|placeholder }}</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "Conditions" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Roles" %}</th><td>{% for x in object.roles.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Device types" %}</th><td>{% for x in object.device_types.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Regions" %}</th><td>{% for x in object.regions.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Site groups" %}</th><td>{% for x in object.site_groups.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Sites" %}</th><td>{% for x in object.sites.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Locations" %}</th><td>{% for x in object.locations.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Tenants" %}</th><td>{% for x in object.tenants.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Platforms" %}</th><td>{% for x in object.platforms.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        <tr><th scope="row">{% trans "Statuses" %}</th><td>{{ object.statuses|join:", "|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Device tags" %}</th><td>{% for tag in object.match_tags.all %}{% tag tag %}{% empty %}{{ ''|placeholder }}{% endfor %}{% if object.match_tags.all %} <span class="text-muted">({{ object.get_tag_match_display }})</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Advanced condition" %}</th><td>{% if object.constraint %}<pre class="mb-0">{{ object.constraint|json }}</pre>{% else %}{{ ''|placeholder }}{% endif %}</td></tr>
+      </table>
+    </div>
+    {% include 'inc/panels/tags.html' %}
+    {% include 'inc/panels/comments.html' %}
+  </div>
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Number" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Source" %}</th><td>{% badge object.get_number_source_display bg_color=object.get_number_source_color %}</td></tr>
+        {% if object.number_source == 'ip' %}
+        <tr><th scope="row">{% trans "IP pattern" %}</th><td class="font-monospace">{{ object.ip_pattern }}</td></tr>
+        {% endif %}
+        <tr><th scope="row">{% trans "Digits" %}</th><td>{{ object.number_digits }}</td></tr>
+        <tr><th scope="row">{% trans "Range" %}</th><td>{{ object.number_first }} &ndash; {{ object.last_number }}</td></tr>
+        <tr><th scope="row">{% trans "Never handed out" %}</th><td>{{ object.skip_numbers|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Fill gaps" %}</th><td>{% checkmark object.fill_gaps %}</td></tr>
+        <tr><th scope="row">{% trans "Number scope" %}</th><td>{{ object.get_number_scope_display }}</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% blocktrans with n=device_count %}Series ({{ n }} devices){% endblocktrans %}</h2>
+      {% if series %}
+      <table class="table table-hover">
+        <thead><tr><th>{% trans "Series" %}</th><th>{% trans "Devices" %}</th><th>{% trans "Highest" %}</th><th>{% trans "Next name" %}</th></tr></thead>
+        <tbody>
+        {% for s in series %}
+          <tr>
+            <td class="font-monospace">{{ s.prefix }}{% if object.number_scope == 'name' %}#{{ s.suffix }}{% endif %}</td>
+            <td>{{ s.count }}</td>
+            <td>{{ s.highest_text|placeholder }}{% if s.high_water and s.high_water > s.highest|default:0 %} <span class="text-muted">({% blocktrans with n=s.high_water %}{{ n }} handed out before{% endblocktrans %})</span>{% endif %}</td>
+            <td class="font-monospace">{{ s.next|placeholder }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="card-body text-muted">{% trans "No devices follow this rule yet." %}</div>
+      {% endif %}
+      {% if truncated %}<div class="card-footer text-muted">{% trans "Only the first 2000 devices are shown." %}</div>{% endif %}
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% blocktrans with n=drifted_count %}Not following this rule ({{ n }}){% endblocktrans %}</h2>
+      {% if drifted_count %}
+        <form action="{% url 'plugins:netbox_naming_convention:namingrule_rename' pk=object.pk %}" method="post">
+          {% csrf_token %}
+          {% render_table drifted_table 'inc/table.html' %}
+          {% if perms.dcim.change_device %}
+          <div class="card-footer text-end">
+            <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-rename-outline"></i> {% trans "Rename selected to the suggested names" %}</button>
+          </div>
+          {% endif %}
+        </form>
+      {% else %}
+        <div class="card-body text-muted">{% trans "Every device of this rule follows it." %}</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

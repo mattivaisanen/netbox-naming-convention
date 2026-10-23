@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netbox-naming-convention"
+version = "0.1.0"
+description = "Name NetBox devices from rules, with running numbers per series."
+requires-python = ">=3.10"
+license = "Apache-2.0"
+readme = "README.md"
+authors = [{ name = "Matti" }]
+# No runtime dependencies beyond NetBox (which brings Django). NetBox
+# versions are enforced at runtime by min_version in
+# netbox_naming_convention/__init__.py.
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["netbox_naming_convention*"]
+
+[tool.setuptools.package-data]
+netbox_naming_convention = [
+    "templates/netbox_naming_convention/*.html",
+    "templates/netbox_naming_convention/**/*.html",
+]
