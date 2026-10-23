@@ -24,6 +24,20 @@ class NamingTests(NetBoxData, TestCase):
         self.assertEqual(self.device(rack=self.jk8).name, 'FITASWI001_JK8')
         self.assertEqual(self.device(rack=self.jk9).name, 'FITASWI002_JK9')
 
+    def test_more_specific_rule_wins_on_equal_priority(self):
+        # Named so it sorts before the tagged rule: the name must not decide.
+        self.rule(roles=[self.switch], name='A switches', template='SW{n}')
+        self.switches.delete()
+        self.rule(roles=[self.switch], match_tags=[self.ot], name='OT switches', template='OT-SW{n}')
+        self.assertEqual(self.device(rack=self.jk8, tags=[self.ot]).name, 'OT-SW001')
+        self.assertEqual(self.device(rack=self.jk8).name, 'SW001')
+
+    def test_priority_still_comes_first(self):
+        self.switches.delete()
+        self.rule(roles=[self.switch], name='General', template='SW{n}', priority=10)
+        self.rule(roles=[self.switch], match_tags=[self.ot], name='OT switches', template='OT-SW{n}')
+        self.assertEqual(self.device(rack=self.jk8, tags=[self.ot]).name, 'SW001')
+
     def test_filters_for_the_whole_name(self):
         self.switches.template = '{site.name} SW-{n}{rack.name|before:-|optional}'
         self.switches.name_filters = 'ascii|nospace|lower'

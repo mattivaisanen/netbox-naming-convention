@@ -17,6 +17,15 @@ How the plugin works and why, for anyone changing it.
 | `forms.py` | The rule form. `number_source` is an `HTMXSelect`: changing it draws the form again without the fields of the other source (like NetBox's rack form does for rack types). |
 | `integrations.py` | Detects netbox-change-approval (no code depends on it). |
 
+## Which rule wins
+
+`matching.ordered_rules()`: priority (lowest first), then
+`NamingRule.specificity` (how many kinds of conditions are set: each
+many-to-many field, statuses and the advanced condition count one each),
+most first, then name. Sorted in Python because specificity counts
+prefetched relations. Every caller of `find_rule()` and the rule page use
+this order.
+
 ## Matching a device that has no row yet
 
 A device being created has no primary key, so rules are matched on the

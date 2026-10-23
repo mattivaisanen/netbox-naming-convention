@@ -27,6 +27,9 @@ New:
 
 Fixed:
 
+- With two rules on the same priority, the one first by name won, even
+  when the other matched more (a switch tagged OT got the general switch
+  rule). Now the rule with more kinds of conditions wins on a tie.
 - The grayed-out name field was hard to tell from a normal one. It is now
   clearly gray, with a padlock.
 - Examples in the documentation and help texts are generic.

@@ -79,7 +79,10 @@ class NamingRule(NetBoxModel):
     enabled = models.BooleanField(verbose_name=_('enabled'), default=True)
     priority = models.PositiveIntegerField(
         verbose_name=_('priority'), default=100,
-        help_text=_('Rules are checked from the lowest number up; the first that matches names the device.'),
+        help_text=_(
+            'Rules are checked from the lowest number up; the first that matches names the device. On the '
+            'same priority, the rule with more kinds of conditions wins.'
+        ),
     )
 
     # Conditions. A rule needs a role or a device type; everything else is
@@ -210,6 +213,18 @@ class NamingRule(NetBoxModel):
     @property
     def parsed_template(self):
         return Template(self.template)
+
+    #: The kinds of conditions counted by `specificity`.
+    CONDITION_FIELDS = (
+        'roles', 'device_types', 'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms',
+        'match_tags',
+    )
+
+    @property
+    def specificity(self):
+        """How many kinds of conditions the rule has; breaks ties between equal priorities."""
+        count = sum(1 for name in self.CONDITION_FIELDS if getattr(self, name).all())
+        return count + bool(self.statuses) + bool(self.constraint)
 
     @property
     def parsed_name_filters(self):

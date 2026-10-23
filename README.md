@@ -103,7 +103,10 @@ and restart NetBox.
 ## Rules
 
 Under **Naming → Naming rules**. Rules are checked by priority (lowest
-first); the first enabled rule that matches a device names it.
+first); the first enabled rule that matches a device names it. On the same
+priority, the rule with more kinds of conditions is checked first, so a rule
+for switches tagged `lab` wins over one for all switches; after that, by
+name. Set different priorities when you want a fixed order.
 
 | Field | Meaning |
 | --- | --- |
@@ -171,7 +174,7 @@ that don't fit.
 | Switches, with the rack | `{site.slug\|upper}-SW{n}-{rack.name}` | `AMS1-SW014-R01` |
 | The same, rack optional | `{site.slug\|upper}-SW{n}{rack.name\|before:-\|optional}` | `AMS1-SW015`, `AMS1-SW016-R02` |
 | Codes cut from names | `{region.name\|first:2\|upper}{site.name\|first:3\|upper}{role.parent.name\|first:3\|upper}{n}` | `NEAMSSWI001` (Netherlands, Amsterdam, Switch) |
-| A tagged group (tag `lab`, priority 10) | `LAB-{device_type.model}-{n}` | `LAB-C9300-001` |
+| A tagged group (tag `lab`) | `LAB-{device_type.model}-{n}` | `LAB-C9300-001` |
 | Printers, 4 digits | `{site.slug\|upper}-PRN{n}` | `AMS1-PRN0001` |
 | Numbered by IP | `{site.slug}-sw{n}`, mask `*.*.*.N` | `ams1-sw006` for 10.0.0.6 |
 

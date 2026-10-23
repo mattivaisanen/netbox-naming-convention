@@ -15,7 +15,7 @@ from django.db.models import Manager, QuerySet
 
 from .models import NamingRule, TagMatchChoices
 
-__all__ = ('find_rule', 'rule_matches', 'device_tag_slugs', 'rules_queryset')
+__all__ = ('find_rule', 'rule_matches', 'device_tag_slugs', 'rules_queryset', 'ordered_rules')
 
 _LOOKUPS = {
     'exact', 'iexact', 'in', 'isnull', 'gt', 'gte', 'lt', 'lte',
@@ -28,6 +28,16 @@ def rules_queryset():
         'roles', 'device_types', 'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms',
         'match_tags',
     ).order_by('priority', 'name')
+
+
+def ordered_rules(rules=None):
+    """
+    Enabled rules in the order they are tried: lowest priority first; on the
+    same priority, the rule with more kinds of conditions first (a rule for
+    switches tagged "lab" before one for all switches); then by name.
+    """
+    rules = list(rules if rules is not None else rules_queryset())
+    return sorted(rules, key=lambda rule: (rule.priority, -rule.specificity, rule.name))
 
 
 def _with_ancestors(obj):
@@ -234,9 +244,9 @@ def rule_matches(rule, device, tag_slugs=None):
 
 
 def find_rule(device, rules=None):
-    """The first enabled rule that matches `device`, or None."""
+    """The first enabled rule that matches `device` (see ordered_rules()), or None."""
     tag_slugs = None
-    for rule in (rules if rules is not None else rules_queryset()):
+    for rule in ordered_rules(rules):
         if rule.match_tags.all() and tag_slugs is None:
             tag_slugs = device_tag_slugs(device)
         if rule_matches(rule, device, tag_slugs=tag_slugs):
@@ -290,7 +300,7 @@ def rule_devices(rule, limit=None):
         'site', 'site__region', 'site__group', 'location', 'rack', 'role', 'device_type',
         'device_type__manufacturer', 'tenant', 'platform', 'primary_ip4', 'primary_ip6',
     ).prefetch_related('tags').order_by('name', 'pk')
-    rules = list(rules_queryset())
+    rules = ordered_rules()
     out = []
     for device in devices.iterator(chunk_size=500):
         slugs = {t.slug for t in device.tags.all()}
