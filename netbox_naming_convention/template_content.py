@@ -1,3 +1,4 @@
+from django.core.exceptions import FieldDoesNotExist
 from django.urls import reverse
 
 from dcim.models import Device
@@ -69,28 +70,62 @@ class DeviceFormHelper(PluginTemplateExtension):
 
 class ChangeRequestNaming(PluginTemplateExtension):
     """
-    netbox-change-approval's change request page: says when a device's new
-    name was given by a naming rule. Only matches when that plugin is
-    installed (the model label is just a string here).
+    netbox-change-approval's change request page: for a new device or a
+    rename, says whether the name came from (or follows) its naming rule.
+    Only matches when that plugin is installed (the model label is just a
+    string here).
     """
     models = ('netbox_change_approval.changerequest',)
 
     def alerts(self):
         change = self.context.get('object')
-        if change is None or change.content_type.app_label != 'dcim' or change.content_type.model != 'device':
+        device = requested_device(change)
+        if device is None or not device.name:
             return ''
-        diff = change.diff if isinstance(change.diff, dict) else {}
-        name = diff.get('name')
-        if isinstance(name, dict):
-            name = name.get('new')
-        if not name or not isinstance(name, str):
+        assigned = AssignedName.lookup(device.pk, device.name)
+        rule = find_rule(device)
+        if assigned is None and rule is None:
             return ''
-        assigned = AssignedName.lookup(change.object_id, name)
-        if assigned is None:
-            return ''
+        fits = follows(device, rule)[1] if rule else None
+        hint = None
+        if rule and not fits:
+            # Like the edit form: suggest from the name the device has now.
+            requested, device.name = device.name, getattr(device, '_naming_stored_name', device.name)
+            hint = suggest(device, rule)
+            device.name = requested
         return self.render('netbox_naming_convention/inc/change_request_alert.html', extra_context={
-            'assigned': assigned,
+            'assigned': assigned, 'rule': rule, 'fits': fits, 'name': device.name,
+            'suggested': hint.name if hint and hint.ready else None,
         })
+
+
+def requested_device(change):
+    """
+    The device as a change request would leave it: a pending new device as
+    it is, a pending update with its requested values applied (in memory).
+    None for anything else, or when the name doesn't change.
+    """
+    if change is None or (change.content_type.app_label, change.content_type.model) != ('dcim', 'device'):
+        return None
+    if change.object_id is None or change.action not in ('create', 'update'):
+        return None
+    device = Device.objects.filter(pk=change.object_id).first()
+    diff = change.diff if isinstance(change.diff, dict) else {}
+    if device is None or change.action == 'create':
+        return device
+    if 'name' not in diff:
+        return None
+    device._naming_stored_name = device.name
+    for key, value in diff.items():
+        value = value.get('new') if isinstance(value, dict) else value
+        try:
+            field = Device._meta.get_field(key[:-3] if key.endswith('_id') else key)
+        except FieldDoesNotExist:
+            continue
+        if field.concrete and not field.many_to_many:
+            setattr(device, field.attname, value)
+    device._state.fields_cache = {}
+    return device
 
 
 template_extensions = [DeviceNamingPanel, DeviceFormHelper, ChangeRequestNaming]

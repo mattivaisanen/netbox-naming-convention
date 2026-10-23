@@ -14,7 +14,8 @@ New:
   out a name that follows its rule too; the pencil button unlocks it.
 - The device's change log entry says when its name came from a rule, the
   device page shows whether the rule filled the name in or suggested it, and
-  with netbox-change-approval the change request page says so too.
+  with netbox-change-approval the change request page says whether the
+  name was filled in by the rule, follows it, or doesn't.
 - Devices that don't follow their rule can be renamed in bulk from the
   rule page: tick them, check old and new names, confirm. The renames go
   through NetBox's device import (change log, approvals).

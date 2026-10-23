@@ -52,7 +52,7 @@ class ChangeApprovalTests(NetBoxData, TestCase):
         page = self.client.get(change.get_absolute_url())
         self.assertContains(page, 'was filled in by the naming rule "Tampere switches"')
 
-    def test_suggested_rename_shows_on_the_change_request(self):
+    def test_rename_to_the_rules_name_shows_on_the_change_request(self):
         from netbox_change_approval.context import applying_change_on
         from netbox_change_approval.models import ChangeRequest
 
@@ -64,7 +64,20 @@ class ChangeApprovalTests(NetBoxData, TestCase):
         ))
         change = ChangeRequest.objects.get(object_id=device.pk, action='update', status='pending')
         page = self.client.get(change.get_absolute_url())
-        self.assertContains(page, 'was suggested by the naming rule "Tampere switches"')
+        self.assertContains(page, 'follows the naming rule "Tampere switches"')
+
+    def test_typed_rename_shows_on_the_change_request(self):
+        from netbox_change_approval.context import applying_change_on
+        from netbox_change_approval.models import ChangeRequest
+
+        with applying_change_on():
+            device = Device.objects.create(name='FITASWI001_JK8', site=self.tampere, role=self.access,
+                                           device_type=self.c9300, rack=self.jk8)
+        self.client.post(reverse('dcim:device_edit', args=[device.pk]), self.form(name='my-switch'))
+        change = ChangeRequest.objects.get(object_id=device.pk, action='update', status='pending')
+        page = self.client.get(change.get_absolute_url())
+        self.assertContains(page, 'does not follow the naming rule "Tampere switches"')
+        self.assertContains(page, 'The rule suggests <strong>FITASWI001_JK8</strong>')
 
     def test_rename_waits_for_approval(self):
         from netbox_change_approval.models import ChangeRequest

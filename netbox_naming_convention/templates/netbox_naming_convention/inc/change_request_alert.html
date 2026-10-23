@@ -1,9 +1,14 @@
 {% load i18n %}
-<div class="alert alert-info" role="alert">
+<div class="alert alert-{% if assigned or fits %}info{% else %}warning{% endif %}" role="alert">
   <i class="mdi mdi-format-letter-case"></i>
   {% if assigned.how == 'auto' %}
-    {% blocktrans with name=assigned.name rule=assigned.rule_name %}The name <strong>{{ name }}</strong> was filled in by the naming rule "{{ rule }}".{% endblocktrans %}
+    {% blocktrans with rule=assigned.rule_name %}The name <strong>{{ name }}</strong> was filled in by the naming rule "{{ rule }}".{% endblocktrans %}
+  {% elif assigned %}
+    {% blocktrans with rule=assigned.rule_name %}The name <strong>{{ name }}</strong> was suggested by the naming rule "{{ rule }}".{% endblocktrans %}
+  {% elif fits %}
+    {% blocktrans %}The name <strong>{{ name }}</strong> follows the naming rule "{{ rule }}".{% endblocktrans %}
   {% else %}
-    {% blocktrans with name=assigned.name rule=assigned.rule_name %}The name <strong>{{ name }}</strong> was suggested by the naming rule "{{ rule }}".{% endblocktrans %}
+    {% blocktrans %}The name <strong>{{ name }}</strong> does not follow the naming rule "{{ rule }}".{% endblocktrans %}
+    {% if suggested %}{% blocktrans %}The rule suggests <strong>{{ suggested }}</strong>.{% endblocktrans %}{% endif %}
   {% endif %}
 </div>

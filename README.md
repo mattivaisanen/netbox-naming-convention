@@ -27,7 +27,8 @@ where 014 is the next free number of the series `AMS1-SW`.
   whose name was changed by hand gets back the number the rule gave it, as
   long as no other device has taken it. Nothing changes until you press it and save, and
   with netbox-change-approval installed the rename waits for approval like
-  any other edit; the change request says the name came from the rule. The only exception is a device without a name: it is
+  any other edit; the change request says whether the new name follows the
+  rule. The only exception is a device without a name: it is
   named as soon as its rule has what it needs (for example when it gets the
   primary IP its number comes from).
 - **Running numbers per series.** Each rule sets the digits (001 or 0001),
@@ -189,9 +190,9 @@ that don't fit.
 Naming rules are ordinary NetBox objects, so changes to them need approval
 like changes to any other object. A new device is written at once by
 change-approval (marked pending), so it gets its name and number right
-away; a rename waits for approval. When the name came from a rule (filled
-in on add, or *Suggest again* on edit), the change request page says so
-above the changes. The plugin's own records (numbers handed out, names
+away; a rename waits for approval. Above the changes, the change request
+page says whether the name was filled in by the rule, follows it, or
+doesn't (and what the rule suggests). The plugin's own records (numbers handed out, names
 given) are never gated.
 
 ## License

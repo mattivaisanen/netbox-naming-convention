@@ -73,20 +73,22 @@ goes for `AssignedName` (below).
    `AssignedName` (device, name, rule, how).
 5. Edit form: when the posted name equals `_naming_suggested` (put there by
    *Suggest again*) and still equals the rule's suggestion, post_clean
-   records it as `suggested` in `AssignedName` and adds "Name suggested by
-   naming rule ..." to the change log message. It is recorded at clean time
-   on purpose: with netbox-change-approval the rename is queued and saved
-   later in the approver's request, and the change request page needs to
-   know now.
+   records it as `suggested` in `AssignedName`, and pre_save adds "Name
+   suggested by naming rule ..." to the change log message (the view sets
+   the message only after validation).
 
-`AssignedName` is what the device panel ("Given by") and the change request
-note read. The note is a `PluginTemplateExtension.alerts()` for the model
-label `netbox_change_approval.changerequest`: just a string, so nothing is
-imported from that plugin, and it only ever matches when it is installed. It
-reads the request's `diff` (the name for a create, `{"old", "new"}` for an
-update) and looks the device and new name up in `AssignedName`.
-
-A device that has a name is never renamed by these hooks.
+`AssignedName` is what the device panel ("Given by") reads. The note on
+netbox-change-approval's change request page is a
+`PluginTemplateExtension.alerts()` for the model label
+`netbox_change_approval.changerequest`: just a string, so nothing is
+imported from that plugin, and it only ever matches when it is installed.
+`requested_device()` builds the device as the request would leave it (a
+pending create is already saved; for an update the `diff`'s new values are
+set on an in-memory copy). The note then says the name was filled in by the
+rule (from `AssignedName`), follows the rule, or doesn't (with the rule's
+suggestion, from the device's current name). A rename that waits for
+approval is not in `AssignedName` (change-approval undoes the edit's
+writes when it queues it), which is why the note checks the rule instead.
 
 ## The device form
 
