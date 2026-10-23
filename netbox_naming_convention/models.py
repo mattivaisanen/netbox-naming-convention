@@ -23,7 +23,7 @@ from netbox.models import NetBoxModel
 from utilities.choices import ChoiceSet
 
 from .numbering import MAX_DIGITS, NumberError, parse_ip_pattern, parse_skip
-from .template import Template, TemplateError
+from .template import Template, TemplateError, parse_name_filters
 
 __all__ = (
     'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NamingRule', 'NamingSeries', 'NumberScopeChoices', 'NumberSourceChoices',
@@ -135,6 +135,13 @@ class NamingRule(NetBoxModel):
             '{rack.name|before:-|optional}.'
         ),
     )
+    name_filters = models.CharField(
+        verbose_name=_('filters for the whole name'), max_length=200, blank=True,
+        help_text=_(
+            'Applied to the whole name after the template, for example ascii|nospace|lower. The number is '
+            'not changed. Filters: upper, lower, ascii, alnum, nospace, replace:old:new.'
+        ),
+    )
     number_source = models.CharField(
         verbose_name=_('number source'), max_length=10, choices=NumberSourceChoices,
         default=NumberSourceChoices.SEQUENCE,
@@ -205,6 +212,13 @@ class NamingRule(NetBoxModel):
         return Template(self.template)
 
     @property
+    def parsed_name_filters(self):
+        try:
+            return parse_name_filters(self.name_filters)
+        except TemplateError:
+            return []
+
+    @property
     def skip_ranges(self):
         try:
             return parse_skip(self.skip_numbers)
@@ -224,6 +238,10 @@ class NamingRule(NetBoxModel):
         else:
             if self.number_source == NumberSourceChoices.IP and not template.has_number:
                 errors['template'] = _('A rule that reads its number from the IP needs {n} in the template.')
+        try:
+            parse_name_filters(self.name_filters)
+        except TemplateError as e:
+            errors['name_filters'] = str(e)
         if self.number_source == NumberSourceChoices.IP:
             try:
                 parse_ip_pattern(self.ip_pattern)

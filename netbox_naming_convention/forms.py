@@ -50,7 +50,7 @@ class NamingRuleForm(NetBoxModelForm):
             'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms', 'statuses', 'match_tags',
             'tag_match', 'constraint', name=_('Other conditions (optional)'),
         ),
-        FieldSet('template', name=_('Name')),
+        FieldSet('template', 'name_filters', name=_('Name')),
         FieldSet(
             'number_source', 'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps',
             'number_scope', 'ip_pattern', name=_('Number'),
@@ -63,11 +63,12 @@ class NamingRuleForm(NetBoxModelForm):
         fields = (
             'name', 'description', 'enabled', 'priority', 'roles', 'device_types', 'regions', 'site_groups',
             'sites', 'locations', 'tenants', 'platforms', 'statuses', 'match_tags', 'tag_match', 'constraint',
-            'template', 'number_source', 'ip_pattern', 'number_digits', 'number_first', 'number_last',
-            'skip_numbers', 'fill_gaps', 'number_scope', 'enforcement', 'comments', 'tags',
+            'template', 'name_filters', 'number_source', 'ip_pattern', 'number_digits', 'number_first',
+            'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'enforcement', 'comments', 'tags',
         )
         widgets = {
             'template': forms.TextInput(attrs={'class': 'font-monospace'}),
+            'name_filters': forms.TextInput(attrs={'class': 'font-monospace'}),
             # Changing the source draws the form again with its own fields.
             'number_source': HTMXSelect(),
         }

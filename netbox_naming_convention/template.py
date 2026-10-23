@@ -22,7 +22,10 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-__all__ = ('Template', 'TemplateError', 'Rendered', 'ROOTS', 'ATTRIBUTES', 'FILTERS', 'NUMBER')
+__all__ = (
+    'Template', 'TemplateError', 'Rendered', 'ROOTS', 'ATTRIBUTES', 'FILTERS', 'NUMBER', 'NAME_FILTERS',
+    'parse_name_filters', 'filter_name',
+)
 
 
 class TemplateError(ValueError):
@@ -173,6 +176,39 @@ def _parse_path(text):
     if root == 'device' and rest[0] not in ('cf', 'serial', 'asset_tag', 'label'):
         raise TemplateError(f'"{text}": a device value is cf.<name>, serial or asset_tag.')
     return (root, *rest)
+
+
+#: Filters a rule can apply to its whole name (the text around the number).
+NAME_FILTERS = ('upper', 'lower', 'ascii', 'alnum', 'nospace', 'replace')
+
+
+def parse_name_filters(text):
+    """A rule's filters for the whole name, such as "ascii|nospace|lower"."""
+    filters = []
+    for item in (text or '').split('|'):
+        if not item.strip():
+            continue
+        name, args = _parse_filter(item.lstrip())
+        if name not in NAME_FILTERS:
+            raise TemplateError(
+                f'"{name}" only works on one value. For the whole name use: {", ".join(NAME_FILTERS)}.'
+            )
+        filters.append((name, args))
+    return filters
+
+
+def filter_name(text, filters):
+    """
+    Apply whole-name filters to rendered text, leaving the number marker and
+    <missing> placeholders of Rendered.pattern alone.
+    """
+    if not filters or not text:
+        return text
+    pieces = re.split(f'({NUMBER}|<[^<>]*>)', text)
+    return ''.join(
+        piece if piece == NUMBER or (piece.startswith('<') and piece.endswith('>')) else apply_filters(piece, filters)
+        for piece in pieces
+    )
 
 
 def _ascii(value):

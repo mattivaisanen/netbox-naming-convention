@@ -13,6 +13,7 @@
         <tr><th scope="row">{% trans "Enabled" %}</th><td>{% checkmark object.enabled %}</td></tr>
         <tr><th scope="row">{% trans "Priority" %}</th><td>{{ object.priority }}</td></tr>
         <tr><th scope="row">{% trans "Template" %}</th><td class="font-monospace">{{ object.template }}</td></tr>
+        <tr><th scope="row">{% trans "Filters for the whole name" %}</th><td class="font-monospace">{{ object.name_filters|placeholder }}</td></tr>
         <tr><th scope="row">{% trans "Enforcement" %}</th><td>{% badge object.get_enforcement_display bg_color=object.get_enforcement_color %}</td></tr>
         <tr><th scope="row">{% trans "Description" %}</th><td>{{ object.description|placeholder }}</td></tr>
       </table>

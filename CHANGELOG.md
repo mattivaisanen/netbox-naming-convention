@@ -4,6 +4,8 @@
 
 New:
 
+- Filters for the whole name per rule, such as `ascii|nospace|lower`, so
+  you don't have to repeat them on every value of the template.
 - The rule form links to a reference page in NetBox with every value and
   filter a template can use.
 - The rule form shows only the number fields that apply: first and last

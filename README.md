@@ -112,6 +112,7 @@ first); the first enabled rule that matches a device names it.
 | Device tags, tag match | Optional. The device needs all (or any) of the tags, for categories of devices that roles don't tell apart. |
 | Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. |
 | Template | How the name is built, see below. |
+| Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |
 | Number source | *Running number* or *From primary IP*. |
 | Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. |
 | First number, last number | Running numbers only. The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3). |
@@ -143,7 +144,8 @@ same lists as below.
 | `{device.serial}`, `{device.asset_tag}` | the device's own values |
 | `{{`, `}}` | literal braces |
 
-Filters change a value, from left to right: `{site.name|first:2|upper}`.
+Filters change a value, from left to right: `{site.name|first:2|upper}`. To apply one to the
+whole name instead, put it in the rule's *Filters for the whole name*.
 
 | Filter | Does |
 | --- | --- |

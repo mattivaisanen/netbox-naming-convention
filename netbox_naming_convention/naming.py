@@ -25,7 +25,7 @@ from .models import AssignedName, NamingSeries, NumberSourceChoices
 from .numbering import (
     NumberError, is_skipped, name_regex, next_number, number_from_ip, series_key, used_numbers,
 )
-from .template import NUMBER, ROOTS, TemplateError
+from .template import NUMBER, ROOTS, TemplateError, filter_name
 
 __all__ = ('Suggestion', 'suggest', 'assign', 'check_typed_name', 'follows', 'resolve', 'mark_auto', 'is_auto')
 
@@ -107,8 +107,11 @@ def _render(device, rule):
         out.error = _('The rule "{rule}" has a broken template: {error}').format(rule=rule, error=e)
         return out, False
     rendered = template.render(lambda path: resolve(device, path))
-    out.prefix, out.suffix, out.missing = rendered.prefix, rendered.suffix, list(rendered.missing)
-    out.pattern = rendered.pattern.replace(NUMBER, '#' * rule.number_digits)
+    filters = rule.parsed_name_filters
+    out.prefix = filter_name(rendered.prefix, filters)
+    out.suffix = filter_name(rendered.suffix, filters)
+    out.missing = list(rendered.missing)
+    out.pattern = filter_name(rendered.pattern, filters).replace(NUMBER, '#' * rule.number_digits)
     if template.has_number:
         out.series = series_key(out.prefix, out.suffix, rule.number_scope)
     if template.has_number and rule.number_source == NumberSourceChoices.IP and _primary_ip(device) is None:

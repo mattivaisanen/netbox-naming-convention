@@ -24,6 +24,22 @@ class NamingTests(NetBoxData, TestCase):
         self.assertEqual(self.device(rack=self.jk8).name, 'FITASWI001_JK8')
         self.assertEqual(self.device(rack=self.jk9).name, 'FITASWI002_JK9')
 
+    def test_filters_for_the_whole_name(self):
+        self.switches.template = '{site.name} SW-{n}{rack.name|before:-|optional}'
+        self.switches.name_filters = 'ascii|nospace|lower'
+        self.switches.save()
+        self.assertEqual(self.device(rack=self.jk8).name, 'tamperesw-001-jk8')
+        self.assertEqual(self.device().name, 'tamperesw-002')
+        self.switches.template = '{site.name} SW-{n}-{rack.name}'
+        self.switches.save()
+        self.assertEqual(suggest(self.device(save=False)).pattern, 'tamperesw-###-<rack>')
+
+    def test_whole_name_filters_are_checked(self):
+        self.switches.name_filters = 'lower|first:3'
+        with self.assertRaises(ValidationError) as caught:
+            self.switches.full_clean()
+        self.assertIn('name_filters', caught.exception.message_dict)
+
     def test_suggestion_has_a_readable_pattern(self):
         self.assertEqual(suggest(self.device(rack=self.jk8, save=False)).pattern, 'FITASWI###_JK8')
         self.assertEqual(suggest(self.device(save=False)).pattern, 'FITASWI###_<rack>')

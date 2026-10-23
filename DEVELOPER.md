@@ -28,6 +28,14 @@ Roles, regions, locations and site groups match their ancestors by walking
 trees. The advanced condition is evaluated in memory with
 the common lookups, like change-approval's `matching.py`.
 
+## Filters for the whole name
+
+`NamingRule.name_filters` (`template.parse_name_filters()`, limited to
+`NAME_FILTERS`) is applied by `naming._render()` to the rendered prefix and
+suffix separately, so the number is never touched and series, used numbers
+and `follows()` all see the filtered text. `filter_name()` leaves the
+number marker and `<missing>` placeholders of `Rendered.pattern` alone.
+
 ## Series and numbers
 
 The series of a name is its prefix (the rendered text before `{n}`) for
