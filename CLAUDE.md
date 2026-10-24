@@ -1,7 +1,8 @@
 # Working on this repo
 
-NetBox plugin that names devices from rules (template + running number per
-series). Follows the conventions of mattivaisanen/netbox-change-approval,
+NetBox plugin that names devices, virtual machines and racks from rules
+(template + running number per series). Everything that differs between
+those kinds lives in `kinds.py`. Follows the conventions of mattivaisanen/netbox-change-approval,
 netbox-fortigate-importer and netbox-local-dateformat.
 
 ## Rules

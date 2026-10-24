@@ -5,12 +5,17 @@ The plugin's records.
   fields, REST API). With netbox-change-approval installed, changes to rules
   need approval like changes to any other object.
 - NamingSeries: bookkeeping, deliberately *not* a NetBoxModel: it is written
-  while a device is saved, and an approval plugin must never hold that up.
+  while an object is saved, and an approval plugin must never hold that up.
   One row per series, locked while a number is taken.
-- AssignedName: bookkeeping too. Which device names a rule gave (filled in
-  when the device was added, or suggested and accepted on edit), for the
-  device page and change requests.
+- AssignedName: bookkeeping too. Which names a rule gave (filled in when the
+  object was added, or suggested and accepted on edit), for the object's
+  page and change requests.
+
+A rule names one kind of object (`object_type`: devices, virtual machines
+or racks, see kinds.py); which of its conditions apply depends on that.
 """
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -18,16 +23,16 @@ from django.db import models
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
-from dcim.choices import DeviceStatusChoices
 from netbox.models import NetBoxModel
 from utilities.choices import ChoiceSet
 
+from .kinds import DEVICE, KINDS, ObjectTypeChoices
 from .numbering import MAX_DIGITS, NumberError, parse_ip_pattern, parse_skip
 from .template import Template, TemplateError, parse_name_filters
 
 __all__ = (
     'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NamingRule', 'RequiredValueChoices', 'NamingSeries',
-    'NumberScopeChoices', 'NumberSourceChoices',
+    'NumberScopeChoices', 'NumberSourceChoices', 'ObjectTypeChoices',
     'TagMatchChoices',
 )
 
@@ -65,14 +70,21 @@ class EnforcementChoices(ChoiceSet):
 
 
 class RequiredValueChoices(ChoiceSet):
-    """Device fields a rule can wait for before it names the device."""
+    """
+    Fields a rule can wait for before it names an object. Which of them a
+    rule offers depends on its kind (`Kind.wait_for`).
+    """
     SITE = 'site'
     LOCATION = 'location'
     RACK = 'rack'
+    CLUSTER = 'cluster'
     ROLE = 'role'
     DEVICE_TYPE = 'device_type'
+    VM_TYPE = 'virtual_machine_type'
+    RACK_TYPE = 'rack_type'
     TENANT = 'tenant'
     PLATFORM = 'platform'
+    FACILITY_ID = 'facility_id'
     SERIAL = 'serial'
     ASSET_TAG = 'asset_tag'
 
@@ -80,18 +92,22 @@ class RequiredValueChoices(ChoiceSet):
         (SITE, _('Site')),
         (LOCATION, _('Location')),
         (RACK, _('Rack')),
-        (ROLE, _('Device role')),
+        (CLUSTER, _('Cluster')),
+        (ROLE, _('Role')),
         (DEVICE_TYPE, _('Device type')),
+        (VM_TYPE, _('Virtual machine type')),
+        (RACK_TYPE, _('Rack type')),
         (TENANT, _('Tenant')),
         (PLATFORM, _('Platform')),
+        (FACILITY_ID, _('Facility ID')),
         (SERIAL, _('Serial number')),
         (ASSET_TAG, _('Asset tag')),
     )
 
 
 def default_required_values():
-    """The fields NetBox's device form requires (status always has a value)."""
-    return [RequiredValueChoices.SITE, RequiredValueChoices.ROLE, RequiredValueChoices.DEVICE_TYPE]
+    """The fields NetBox's device form requires (status always has a value); see Kind.default_wait_for."""
+    return list(DEVICE.default_wait_for)
 
 
 class TagMatchChoices(ChoiceSet):
@@ -116,15 +132,33 @@ class NamingRule(NetBoxModel):
         ),
     )
 
-    # Conditions. A rule needs a role or a device type; everything else is
-    # optional. Within one condition any listed value matches; all conditions
-    # must match.
+    object_type = models.CharField(
+        verbose_name=_('names'), max_length=30, choices=ObjectTypeChoices, default=ObjectTypeChoices.DEVICE,
+        help_text=_('The kind of object the rule names.'),
+    )
+
+    # Conditions. Which apply depends on the object type (kinds.py); a device
+    # rule needs a role or a device type. Within one condition any listed
+    # value matches; all conditions must match.
     roles = models.ManyToManyField(
         to='dcim.DeviceRole', related_name='+', blank=True, verbose_name=_('roles'),
         help_text=_('Child roles match too.'),
     )
     device_types = models.ManyToManyField(
         to='dcim.DeviceType', related_name='+', blank=True, verbose_name=_('device types'),
+    )
+    vm_types = models.ManyToManyField(
+        to='virtualization.VirtualMachineType', related_name='+', blank=True,
+        verbose_name=_('virtual machine types'),
+    )
+    clusters = models.ManyToManyField(
+        to='virtualization.Cluster', related_name='+', blank=True, verbose_name=_('clusters'),
+    )
+    rack_roles = models.ManyToManyField(
+        to='dcim.RackRole', related_name='+', blank=True, verbose_name=_('rack roles'),
+    )
+    rack_types = models.ManyToManyField(
+        to='dcim.RackType', related_name='+', blank=True, verbose_name=_('rack types'),
     )
     regions = models.ManyToManyField(
         to='dcim.Region', related_name='+', blank=True, verbose_name=_('regions'),
@@ -142,13 +176,13 @@ class NamingRule(NetBoxModel):
     platforms = models.ManyToManyField(
         to='dcim.Platform', related_name='+', blank=True, verbose_name=_('platforms'),
     )
+    # The choices depend on the object type; clean() checks them.
     statuses = ArrayField(
-        base_field=models.CharField(max_length=50, choices=DeviceStatusChoices),
-        blank=True, default=list, verbose_name=_('statuses'),
+        base_field=models.CharField(max_length=50), blank=True, default=list, verbose_name=_('statuses'),
     )
     match_tags = models.ManyToManyField(
-        to='extras.Tag', related_name='+', blank=True, verbose_name=_('device tags'),
-        help_text=_('Tags the device must have.'),
+        to='extras.Tag', related_name='+', blank=True, verbose_name=_('tags'),
+        help_text=_('Tags the object must have.'),
     )
     tag_match = models.CharField(
         verbose_name=_('tag match'), max_length=10, choices=TagMatchChoices, default=TagMatchChoices.ALL,
@@ -165,7 +199,7 @@ class NamingRule(NetBoxModel):
     template = models.CharField(
         verbose_name=_('template'), max_length=200,
         help_text=_(
-            'Literal text, {n} for the number and values of the device such as {site.slug|upper} or '
+            'Literal text, {n} for the number and values of the object such as {site.slug|upper} or '
             '{rack.name|before:-|optional}.'
         ),
     )
@@ -173,8 +207,8 @@ class NamingRule(NetBoxModel):
         base_field=models.CharField(max_length=20, choices=RequiredValueChoices),
         blank=True, default=default_required_values, verbose_name=_('wait for'),
         help_text=_(
-            'The name is filled in only once these are set, besides the values the template uses. New rules '
-            'wait for the fields the device form requires.'
+            'The name is filled in only once these are set, besides the values the template uses. New device '
+            'rules wait for the fields the device form requires.'
         ),
     )
     name_filters = models.CharField(
@@ -214,7 +248,7 @@ class NamingRule(NetBoxModel):
     fill_gaps = models.BooleanField(
         verbose_name=_('fill gaps'), default=False,
         help_text=_(
-            'Hand out the lowest free number, including those of deleted devices. Off: always one more '
+            'Hand out the lowest free number, including those of deleted objects. Off: always one more '
             'than the highest number ever handed out.'
         ),
     )
@@ -246,23 +280,31 @@ class NamingRule(NetBoxModel):
         return EnforcementChoices.colors.get(self.enforcement)
 
     @property
+    def kind(self):
+        """The kinds.Kind this rule names (devices for an unknown object type)."""
+        return KINDS.get(self.object_type, DEVICE)
+
+    def get_object_type_color(self):
+        return ObjectTypeChoices.colors.get(self.object_type)
+
+    @property
     def last_number(self):
         return self.number_last if self.number_last is not None else 10 ** self.number_digits - 1
 
     @property
     def parsed_template(self):
-        return Template(self.template)
+        return Template(self.template, self.kind)
 
-    #: The kinds of conditions counted by `specificity`.
+    #: Every condition field of any kind (each kind uses some, see kinds.py).
     CONDITION_FIELDS = (
-        'roles', 'device_types', 'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms',
-        'match_tags',
+        'roles', 'device_types', 'vm_types', 'clusters', 'rack_roles', 'rack_types', 'regions', 'site_groups',
+        'sites', 'locations', 'tenants', 'platforms', 'match_tags',
     )
 
     @property
     def specificity(self):
         """How many kinds of conditions the rule has; breaks ties between equal priorities."""
-        count = sum(1 for name in self.CONDITION_FIELDS if getattr(self, name).all())
+        count = sum(1 for name in self.kind.condition_fields if getattr(self, name).all())
         return count + bool(self.statuses) + bool(self.constraint)
 
     @property
@@ -282,16 +324,42 @@ class NamingRule(NetBoxModel):
     def format_number(self, number):
         return str(number).zfill(self.number_digits)
 
+    def _default_wait_for(self):
+        """A new rule of another kind left at the device default (the API, scripts) waits for its own defaults."""
+        if self.pk is None and self.kind is not DEVICE and self.required_values == default_required_values():
+            self.required_values = list(self.kind.default_wait_for)
+
+    def save(self, *args, **kwargs):
+        self._default_wait_for()
+        super().save(*args, **kwargs)
+
     def clean(self):
         super().clean()
         errors = {}
+        kind = self.kind
+        if self.object_type not in KINDS:
+            errors['object_type'] = _('Unknown object type.')
         try:
-            template = Template(self.template)
+            template = Template(self.template, kind)
         except TemplateError as e:
             errors['template'] = str(e)
         else:
             if self.number_source == NumberSourceChoices.IP and not template.has_number:
                 errors['template'] = _('A rule that reads its number from the IP needs {n} in the template.')
+        if self.number_source == NumberSourceChoices.IP and not kind.has_primary_ip:
+            errors['number_source'] = _('{kinds} have no primary IP to read a number from.').format(
+                kinds=kind.label_plural.capitalize(),
+            )
+        statuses = dict(kind.statuses.CHOICES)
+        if unknown := [status for status in self.statuses or [] if status not in statuses]:
+            errors['statuses'] = _('Not a status of {kinds}: {statuses}.').format(
+                kinds=kind.label_plural, statuses=', '.join(unknown),
+            )
+        self._default_wait_for()
+        if unknown := [value for value in self.required_values or [] if value not in kind.wait_for]:
+            errors['required_values'] = _('{kinds} have no {values}.').format(
+                kinds=kind.label_plural.capitalize(), values=', '.join(unknown),
+            )
         try:
             parse_name_filters(self.name_filters)
         except TemplateError as e:
@@ -311,7 +379,7 @@ class NamingRule(NetBoxModel):
             if isinstance(self.constraint, (dict, list)):
                 from .matching import constraint_errors
 
-                if problems := constraint_errors(self.constraint):
+                if problems := constraint_errors(self.constraint, kind):
                     errors['constraint'] = problems
             else:
                 errors['constraint'] = _('Use a JSON object or a list of objects.')
@@ -350,9 +418,14 @@ class AssignedHowChoices(ChoiceSet):
 
 
 class AssignedName(models.Model):
-    """A name a rule gave a device. Kept per device and name."""
-    device = models.ForeignKey(to='dcim.Device', on_delete=models.CASCADE, related_name='+')
-    name = models.CharField(verbose_name=_('name'), max_length=64)
+    """
+    A name a rule gave an object (device, virtual machine, rack). Kept per
+    object and name; removed with the object (signals.py).
+    """
+    object_type = models.ForeignKey(to=ContentType, on_delete=models.CASCADE, related_name='+')
+    object_id = models.PositiveBigIntegerField()
+    object = GenericForeignKey('object_type', 'object_id')
+    name = models.CharField(verbose_name=_('name'), max_length=100)
     rule = models.ForeignKey(to=NamingRule, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     #: The rule's name at the time, kept when the rule is deleted.
     rule_name = models.CharField(verbose_name=_('rule'), max_length=100)
@@ -364,7 +437,9 @@ class AssignedName(models.Model):
         verbose_name = _('assigned name')
         verbose_name_plural = _('assigned names')
         constraints = [
-            models.UniqueConstraint(fields=('device', 'name'), name='netbox_naming_convention_assigned_name'),
+            models.UniqueConstraint(
+                fields=('object_type', 'object_id', 'name'), name='netbox_naming_convention_assigned_name',
+            ),
         ]
 
     def __str__(self):
@@ -374,13 +449,21 @@ class AssignedName(models.Model):
         return AssignedHowChoices.colors.get(self.how)
 
     @classmethod
-    def record(cls, device, name, rule, how):
+    def of(cls, obj):
+        """The names given to `obj` (any model instance)."""
+        if not obj.pk:
+            return cls.objects.none()
+        return cls.objects.filter(object_type=ContentType.objects.get_for_model(obj), object_id=obj.pk)
+
+    @classmethod
+    def record(cls, obj, name, rule, how):
         cls.objects.update_or_create(
-            device=device, name=name, defaults={'rule': rule, 'rule_name': rule.name[:100], 'how': how},
+            object_type=ContentType.objects.get_for_model(obj), object_id=obj.pk, name=name,
+            defaults={'rule': rule, 'rule_name': rule.name[:100], 'how': how},
         )
 
     @classmethod
-    def lookup(cls, device_id, name):
-        if not device_id or not name:
+    def lookup(cls, obj, name):
+        if not obj.pk or not name:
             return None
-        return cls.objects.filter(device_id=device_id, name=name).select_related('rule').first()
+        return cls.of(obj).filter(name=name).select_related('rule').first()

@@ -10,6 +10,7 @@ from dcim.models import Device
 from core.models import ObjectChange
 
 from .. import reference, template
+from ..kinds import KINDS
 from ..models import AssignedName, NamingRule
 from .utils import NetBoxData
 
@@ -144,14 +145,15 @@ class ViewTests(NetBoxData, TestCase):
         self.assertEqual(page.status_code, 200)
         for name, _text, _example in reference.FILTERS:
             self.assertContains(page, name)
+        self.assertContains(self.client.get(reverse(URL + 'reference'), {'object_type': 'rack'}), '{rack.facility_id}')
 
     def test_reference_lists_every_root_and_filter(self):
-        self.assertEqual(set(reference.ROOTS_COVERED), set(template.ROOTS))
         listed = {name.split(':')[0] for name, _text, _example in reference.FILTERS}
         self.assertEqual(listed, set(template.FILTERS))
-        for root in reference.ROOTS_COVERED:
-            if root not in ('device',):
-                self.assertTrue(any(example.startswith('{' + root + '.') for example, _t in reference.VALUES), root)
+        for key, kind in KINDS.items():
+            for root in kind.roots:
+                examples = [example for example, _text in reference.VALUES[key]]
+                self.assertTrue(any(example.startswith('{' + root + '.') for example in examples), (key, root))
 
     def test_device_form_helper_locks_names_that_follow_the_rule(self):
         page = self.client.get(reverse('dcim:device_add'))
@@ -176,7 +178,7 @@ class ViewTests(NetBoxData, TestCase):
         device = Device.objects.get()
         change = ObjectChange.objects.get(changed_object_id=device.pk, action='create')
         self.assertEqual(change.message, 'New switch | Name from naming rule "Tampere switches"')
-        assigned = AssignedName.objects.get(device=device)
+        assigned = AssignedName.of(device).get()
         self.assertEqual((assigned.name, assigned.how, assigned.rule), ('FITASWI001_JK8', 'auto', self.switches))
         self.assertContains(self.client.get(device.get_absolute_url()), 'Filled in by the rule')
 
@@ -207,7 +209,7 @@ class ViewTests(NetBoxData, TestCase):
         self.assertEqual(response.status_code, 302, response.content[:3000])
         device.refresh_from_db()
         self.assertEqual(device.name, 'FITASWI001_JK9')
-        self.assertEqual(AssignedName.objects.get(device=device, name='FITASWI001_JK9').how, 'suggested')
+        self.assertEqual(AssignedName.of(device).get(name='FITASWI001_JK9').how, 'suggested')
         change = ObjectChange.objects.filter(changed_object_id=device.pk, action='update').latest('time')
         self.assertEqual(change.message, 'Name suggested by naming rule "Tampere switches"')
 
@@ -216,6 +218,7 @@ class ViewTests(NetBoxData, TestCase):
         two = self.device(name='old-2', rack=self.jk9)
         page = self.client.get(self.switches.get_absolute_url())
         self.assertContains(page, reverse(URL + 'namingrule_rename', args=[self.switches.pk]))
+        self.assertContains(page, f'name="pk" value="{one.pk}"')  # the objects can be ticked
         page = self.client.post(reverse(URL + 'namingrule_rename', args=[self.switches.pk]),
                                 {'pk': [one.pk, two.pk]})
         self.assertEqual(page.status_code, 200)
@@ -229,4 +232,57 @@ class ViewTests(NetBoxData, TestCase):
         one.refresh_from_db()
         two.refresh_from_db()
         self.assertEqual((one.name, two.name), ('FITASWI001_JK8', 'FITASWI002_JK9'))
-        self.assertEqual(AssignedName.objects.get(device=one).how, 'suggested')
+        self.assertEqual(AssignedName.of(one).get().how, 'suggested')
+
+    def test_naming_report(self):
+        follows = self.device(rack=self.jk8)
+        drifted = self.device(name='old-1', rack=self.jk9)
+        # Made before the rule (bulk_create skips the plugin's save hooks).
+        unnamed, = Device.objects.bulk_create([self.device(rack=self.jk8, save=False)])
+        router = self.device(name='r1', role=self.router)
+        url = reverse(URL + 'report')
+        page = self.client.get(url)
+        report = page.context['report']
+        self.assertEqual(report.counts, {'follows': 1, 'drifted': 1, 'unnamed': 1, 'no_rule': 1})
+        self.assertEqual([(entry.rule, entry.count, entry.drifted) for entry in report.rules],
+                         [(self.switches, 3, 2)])
+        self.assertEqual([obj.pk for obj in report.shown], [drifted.pk])
+        self.assertContains(page, 'FITASWI002_JK9')
+        self.assertContains(page, f'name="pk" value="{drifted.pk}"')
+        page = self.client.get(url, {'show': 'no_rule'})
+        self.assertEqual([obj.pk for obj in page.context['report'].shown], [router.pk])
+        self.assertNotContains(page, 'Rename selected')
+        # Ticked objects are renamed by their own rules; one without a rule is left alone.
+        page = self.client.post(reverse(URL + 'report_rename') + '?object_type=device',
+                                {'pk': [drifted.pk, unnamed.pk, router.pk, follows.pk]})
+        self.assertEqual(page.context['data'], f'id,name\n{drifted.pk},FITASWI002_JK9\n{unnamed.pk},FITASWI003_JK8\n')
+        self.assertEqual([obj for obj, _reason in page.context['skipped']], [router])
+        # Racks have their own tab.
+        page = self.client.get(url, {'object_type': 'rack'})
+        self.assertEqual(page.context['report'].counts['no_rule'], 2)
+
+    def test_rule_preview(self):
+        named = self.device(rack=self.jk8)
+        Device.objects.create(name='old-switch', site=self.tampere, role=self.access, device_type=self.c9300,
+                              rack=self.jk9)
+        self.assertContains(self.client.get(reverse(URL + 'namingrule_add')), 'id="naming-preview"')
+        url = reverse(URL + 'namingrule_preview')
+        form = {
+            'name': 'Tampere switches', 'priority': 100, 'roles': [self.switch.pk], 'sites': [self.tampere.pk],
+            'number_source': 'sequence', 'number_digits': 3, 'number_first': 1, 'number_scope': 'shared',
+            'enforcement': 'warn', 'tag_match': 'all', 'required_values': ['site', 'role', 'device_type'],
+        }
+        # Editing a rule: its devices with the names the new template gives them.
+        page = self.client.post(f'{url}?rule={self.switches.pk}', {**form, 'template': 'SW-{rack.name}-{n}'})
+        self.assertEqual([row['name'] for row in page.context['rows']], ['SW-JK8-001', 'SW-JK9-001'])
+        self.assertEqual(page.context['rows'][0]['object'], named)
+        self.assertEqual(self.switches.template, NamingRule.objects.get(pk=self.switches.pk).template)
+        # A new rule, tried on a device of another rule.
+        page = self.client.post(url, {
+            **form, 'name': 'New', 'priority': 200, 'template': 'X{n}', 'preview_object': named.pk,
+        })
+        self.assertEqual(page.context['tried']['name'], 'X001')
+        self.assertContains(page, 'names this device first')
+        # A broken template only shows the error.
+        page = self.client.post(url, {**form, 'template': 'SW{nope}'})
+        self.assertTrue(page.context['errors'])

@@ -20,6 +20,10 @@ menu = PluginMenu(
                     ),
                 ),
             ),
+            PluginMenuItem(
+                link='plugins:netbox_naming_convention:report',
+                link_text=_('Naming report'),
+            ),
         )),
     ),
 )

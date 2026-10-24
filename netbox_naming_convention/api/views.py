@@ -6,13 +6,11 @@ from rest_framework.response import Response
 from rest_framework.routers import APIRootView
 from rest_framework.views import APIView
 
-from dcim.models import Device, DeviceRole, DeviceType, Location, Platform, Rack, Site
 from extras.models import Tag
-from ipam.models import IPAddress
 from netbox.api.viewsets import NetBoxModelViewSet
-from tenancy.models import Tenant
 
 from .. import filtersets
+from ..kinds import KINDS
 from ..models import NamingRule
 from ..naming import suggest
 from . import serializers
@@ -24,81 +22,78 @@ class NamingConventionRootView(APIRootView):
 
 
 class NamingRuleViewSet(NetBoxModelViewSet):
-    queryset = NamingRule.objects.prefetch_related(
-        'roles', 'device_types', 'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms',
-        'match_tags', 'tags',
-    )
+    queryset = NamingRule.objects.prefetch_related(*NamingRule.CONDITION_FIELDS, 'tags')
     serializer_class = serializers.NamingRuleSerializer
     filterset_class = filtersets.NamingRuleFilterSet
 
 
-#: Form fields that point at another object, and that object's model.
-RELATED = {
-    'site': Site,
-    'location': Location,
-    'rack': Rack,
-    'role': DeviceRole,
-    'device_type': DeviceType,
-    'tenant': Tenant,
-    'platform': Platform,
-    'primary_ip4': IPAddress,
-    'primary_ip6': IPAddress,
-}
-
-
-def device_from_values(user, values):
+def object_from_values(user, kind, values):
     """
-    An unsaved Device carrying the form's values. Objects the user may not
-    view are left out, so the answer never shows their names.
+    An unsaved object of `kind` carrying the form's values (or a saved one
+    with them applied, for `id`). Objects the user may not view are left
+    out, so the answer never shows their names. None when `id` is not found.
     """
-    pk = values.get('device')
+    model = kind.model
+    pk = values.get('id')
     if pk:
-        device = Device.objects.restrict(user, 'view').filter(pk=pk).first()
-        if device is None:
+        obj = model.objects.restrict(user, 'view').filter(pk=pk).first()
+        if obj is None:
             return None
     else:
-        device = Device()
-    for key, model in RELATED.items():
+        obj = model()
+    for key in kind.form_fields:
         if key not in values:
             continue
         value = values[key]
-        if value and not model.objects.restrict(user, 'view').filter(pk=value).exists():
-            value = None
-        setattr(device, f'{key}_id', value)
-        # Drop a cached object of the old value.
-        device._state.fields_cache.pop(key, None)
-    for key in ('status', 'serial', 'asset_tag', 'name'):
-        if key in values:
-            setattr(device, key, values[key] or ('' if key == 'serial' else None))
+        field = model._meta.get_field(key)
+        if field.is_relation:
+            related = field.related_model
+            if value and not related.objects.restrict(user, 'view').filter(pk=value).exists():
+                value = None
+            setattr(obj, field.attname, value or None)
+            # Drop a cached object of the old value.
+            obj._state.fields_cache.pop(key, None)
+        else:
+            setattr(obj, key, value or ('' if not field.null else None))
+    if 'name' in values:
+        obj.name = values['name'] or ('' if not model._meta.get_field('name').null else None)
     if 'custom_fields' in values:
-        device.custom_field_data = {**(device.custom_field_data or {}), **values['custom_fields']}
+        obj.custom_field_data = {**(obj.custom_field_data or {}), **values['custom_fields']}
     if 'tags' in values:
         tags = list(Tag.objects.restrict(user, 'view').filter(pk__in=values['tags']))
-        device._m2m_values = {'tags': tags}
-    return device
+        obj._m2m_values = {'tags': tags}
+    return obj
 
 
 class SuggestView(APIView):
     """
-    POST the device form's values; get the rule that matches, the name it
-    suggests, and what it still waits for. Saves and reserves nothing.
+    POST an object form's values (`object_type`: device, virtualmachine or
+    rack); get the rule that matches, the name it suggests, and what it
+    still waits for. Saves and reserves nothing.
     """
     permission_classes = [IsAuthenticated]
 
     def get_view_name(self):
-        return 'Suggest a device name'
+        return 'Suggest a name'
 
     def post(self, request):
-        user = request.user
-        if not (user.has_perm('dcim.add_device') or user.has_perm('dcim.change_device')):
-            raise PermissionDenied(_('Suggesting names needs permission to add or change devices.'))
         serializer = serializers.SuggestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         values = serializer.validated_data
-        device = device_from_values(user, values)
-        if device is None:
-            return Response({'detail': _('Device not found.')}, status=status.HTTP_404_NOT_FOUND)
-        result = suggest(device, keep_current=bool(values.get('device')))
+        kind = KINDS[values.get('object_type') or 'device']
+        if values.get('device') and not values.get('id'):
+            values['id'] = values['device']
+        user = request.user
+        app_label, model_name = kind.model_label.split('.')
+        if not (user.has_perm(f'{app_label}.add_{model_name}') or user.has_perm(f'{app_label}.change_{model_name}')):
+            raise PermissionDenied(_('Suggesting names needs permission to add or change {kinds}.').format(
+                kinds=kind.label_plural,
+            ))
+        obj = object_from_values(user, kind, values)
+        if obj is None:
+            return Response({'detail': _('{kind} not found.').format(kind=kind.label)},
+                            status=status.HTTP_404_NOT_FOUND)
+        result = suggest(obj, keep_current=bool(values.get('id')))
         data = result.as_dict()
-        data['current'] = device.name or None
+        data['current'] = obj.name or None
         return Response(data)

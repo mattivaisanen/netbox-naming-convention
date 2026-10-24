@@ -1,0 +1,12 @@
+{% load i18n %}
+{# The rule form's object picker and preview. See preview.py. #}
+{% include 'widgets/apiselect.html' %}
+<div id="naming-preview" class="mt-3"
+     hx-post="{{ preview_url }}"
+     hx-trigger="load, change from:closest form, input delay:500ms from:closest form"
+     hx-include="closest form"
+     hx-target="this"
+     hx-swap="innerHTML"
+     hx-sync="this:replace">
+  <span class="text-muted">{% trans "Loading the preview..." %}</span>
+</div>

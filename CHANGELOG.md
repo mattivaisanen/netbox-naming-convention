@@ -4,6 +4,23 @@
 
 New:
 
+- Naming report (*Naming → Naming report*): every device, virtual machine
+  or rack whose name doesn't follow its rule, that has no name yet, or that
+  no rule names, with the suggested names and *Rename selected*.
+- Rules can name virtual machines and racks too. A rule's *Names* field
+  says which; the form then shows that kind's conditions (clusters,
+  virtual machine types, rack roles, rack types...), *Wait for* values and
+  template values (`{cluster.name}`, `{rack.facility_id}`...). Virtual
+  machine and rack forms get the same locked name field, the naming panel
+  and *Suggest again*, the REST API fills in their names, and the rule page
+  renames them in bulk. Devices, virtual machines and racks count their
+  numbers separately. Existing rules keep naming devices. A virtual
+  machine with only a cluster is matched and named with the cluster's site,
+  the site NetBox gives it when it is saved.
+- The rule form previews the rule as you type: what names look like, the
+  names it would give the first ten of its devices, and the name a device
+  you pick would get (and whether another rule names it first). Nothing is
+  saved.
 - *Wait for* per rule: the fields that must be set before the name is
   filled in. New rules wait for site, device role and device type.
 - The hint under the device name is on separate lines: the rule, what
@@ -32,6 +49,8 @@ New:
 
 Fixed:
 
+- *Rename selected to the suggested names* on a rule page had no
+  checkboxes to select with.
 - With two rules on the same priority, the one first by name won, even
   when the other matched more (a switch tagged OT got the general switch
   rule). Now the rule with more kinds of conditions wins on a tie.

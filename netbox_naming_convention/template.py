@@ -4,9 +4,10 @@ Name templates.
 A template is literal text with parts in braces:
 
 - ``{n}``: the number (padded to the rule's digits). At most one.
-- ``{path|filter|filter}``: a value of the device, such as ``{site.name}``,
+- ``{path|filter|filter}``: a value of the object, such as ``{site.name}``,
   ``{role.parent.slug}``, ``{rack.name}`` or ``{site.cf.code}``, changed by
-  filters from left to right.
+  filters from left to right. Where a path may start depends on the kind of
+  object the rule names (`kinds.Kind.roots`).
 
 ``{{`` and ``}}`` are literal braces. Everything else is literal text, so
 ``SW{n}`` is a valid template with no values at all.
@@ -22,8 +23,10 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from .kinds import DEVICE
+
 __all__ = (
-    'Template', 'TemplateError', 'Rendered', 'ROOTS', 'ATTRIBUTES', 'FILTERS', 'NUMBER', 'NAME_FILTERS',
+    'Template', 'TemplateError', 'Rendered', 'ATTRIBUTES', 'FILTERS', 'NUMBER', 'NAME_FILTERS',
     'parse_name_filters', 'filter_name',
 )
 
@@ -32,27 +35,12 @@ class TemplateError(ValueError):
     pass
 
 
-#: Where a path may start, and how to get there from a device.
-ROOTS = {
-    'site': ('site',),
-    'location': ('location',),
-    'rack': ('rack',),
-    'role': ('role',),
-    'device_type': ('device_type',),
-    'manufacturer': ('device_type', 'manufacturer'),
-    'tenant': ('tenant',),
-    'platform': ('platform',),
-    'region': ('site', 'region'),
-    'site_group': ('site', 'group'),
-    'device': (),
-}
-
 #: Attributes a path may read on any object it reaches (besides `parent`,
 #: which goes one level up in a nested object such as a role or region, and
 #: `cf.<name>` for a custom field). Kept short on purpose: names are built
 #: from what identifies a place or a kind of device, never from secrets or
 #: free text.
-ATTRIBUTES = {'name', 'slug', 'model', 'part_number', 'facility', 'serial', 'asset_tag', 'label'}
+ATTRIBUTES = {'name', 'slug', 'model', 'part_number', 'facility', 'facility_id', 'serial', 'asset_tag', 'label'}
 
 #: Filters and how many arguments each takes.
 FILTERS = {
@@ -82,6 +70,8 @@ class Part:
     text: str = ''
     path: tuple = ()
     filters: list = field(default_factory=list)
+    #: The root that is the object itself ("device"), left out of `source`.
+    own_root: str = ''
 
     @property
     def optional(self):
@@ -93,7 +83,7 @@ class Part:
         path = list(self.path)
         if len(path) > 1 and path[-1] in ATTRIBUTES and path[-2] != 'cf':
             path.pop()
-        if path and path[0] == 'device' and len(path) > 1:
+        if path and path[0] == self.own_root and len(path) > 1:
             path.pop(0)
         return '.'.join(path)
 
@@ -139,17 +129,18 @@ def _parse_filter(text):
     return name, args
 
 
-def _parse_path(text):
+def _parse_path(text, kind):
     parts = [p.strip() for p in text.split('.')]
     if not all(parts):
-        raise TemplateError(f'"{text}" is not a valid value. Use for example {{site.name}} or {{rack.name}}.')
+        raise TemplateError(f'"{text}" is not a valid value. Use for example {{site.name}} or {{site.slug}}.')
     root, rest = parts[0], parts[1:]
     if root == 'cf':
-        # A custom field of the device itself.
-        root, rest = 'device', parts
-    if root not in ROOTS:
+        # A custom field of the object itself.
+        root, rest = kind.own_root, parts
+    if root not in kind.roots:
         raise TemplateError(
-            f'Unknown value "{root}". A value starts with one of: {", ".join(sorted(ROOTS))}, or cf.'
+            f'Unknown value "{root}". For {kind.label_plural} a value starts with one of: '
+            f'{", ".join(sorted(kind.roots))}, or cf.'
         )
     i = 0
     while i < len(rest):
@@ -173,8 +164,9 @@ def _parse_path(text):
     last = rest[-1] if rest else None
     if last is None or last == 'parent':
         raise TemplateError(f'"{text}" names an object, not a value. Add .name or .slug, such as {{{text}.name}}.')
-    if root == 'device' and rest[0] not in ('cf', 'serial', 'asset_tag', 'label'):
-        raise TemplateError(f'"{text}": a device value is cf.<name>, serial or asset_tag.')
+    if root == kind.own_root and rest[0] != 'cf' and rest[0] not in kind.own_attributes:
+        offers = ', '.join(['cf.<name>', *sorted(kind.own_attributes)])
+        raise TemplateError(f'"{text}": the {kind.label.lower()} itself offers {offers}.')
     return (root, *rest)
 
 
@@ -243,12 +235,13 @@ def apply_filters(value, filters):
 
 
 class Template:
-    def __init__(self, text):
+    """A parsed template. `kind` (kinds.Kind) says where values may start."""
+    def __init__(self, text, kind=DEVICE):
         self.text = text or ''
-        self.parts = self._parse(self.text)
+        self.parts = self._parse(self.text, kind)
 
     @staticmethod
-    def _parse(text):
+    def _parse(text, kind):
         parts = []
         literal = []
         pos = 0
@@ -278,7 +271,10 @@ class Template:
                 parts.append(Part('number'))
                 continue
             path, *filters = inner.lstrip().split('|')
-            parts.append(Part('value', path=_parse_path(path), filters=[_parse_filter(f) for f in filters]))
+            parts.append(Part(
+                'value', path=_parse_path(path, kind), filters=[_parse_filter(f) for f in filters],
+                own_root=kind.own_root,
+            ))
         literal.append(text[pos:])
         if ''.join(literal):
             parts.append(Part('text', text=''.join(literal)))
@@ -295,7 +291,7 @@ class Template:
     def render(self, resolve):
         """
         Fill the template in. `resolve(path)` returns the value of a path
-        (a string, empty when the device has none).
+        (a string, empty when the object has none).
         """
         out = Rendered(has_number=self.has_number)
         before = True

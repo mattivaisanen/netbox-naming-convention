@@ -10,6 +10,7 @@
       <h2 class="card-header">{% trans "Naming rule" %}</h2>
       <table class="table table-hover attr-table">
         <tr><th scope="row">{% trans "Name" %}</th><td>{{ object.name }}</td></tr>
+        <tr><th scope="row">{% trans "Names" %}</th><td>{% badge object.get_object_type_display bg_color=object.get_object_type_color %}</td></tr>
         <tr><th scope="row">{% trans "Enabled" %}</th><td>{% checkmark object.enabled %}</td></tr>
         <tr><th scope="row">{% trans "Priority" %}</th><td>{{ object.priority }}</td></tr>
         <tr><th scope="row">{% trans "Template" %}</th><td class="font-monospace">{{ object.template }}</td></tr>
@@ -22,16 +23,11 @@
     <div class="card">
       <h2 class="card-header">{% trans "Conditions" %}</h2>
       <table class="table table-hover attr-table">
-        <tr><th scope="row">{% trans "Roles" %}</th><td>{% for x in object.roles.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
-        <tr><th scope="row">{% trans "Device types" %}</th><td>{% for x in object.device_types.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
-        <tr><th scope="row">{% trans "Regions" %}</th><td>{% for x in object.regions.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
-        <tr><th scope="row">{% trans "Site groups" %}</th><td>{% for x in object.site_groups.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
-        <tr><th scope="row">{% trans "Sites" %}</th><td>{% for x in object.sites.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
-        <tr><th scope="row">{% trans "Locations" %}</th><td>{% for x in object.locations.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
-        <tr><th scope="row">{% trans "Tenants" %}</th><td>{% for x in object.tenants.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
-        <tr><th scope="row">{% trans "Platforms" %}</th><td>{% for x in object.platforms.all %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        {% for label, values in conditions %}
+        <tr><th scope="row">{{ label|capfirst }}</th><td>{% for x in values %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
+        {% endfor %}
         <tr><th scope="row">{% trans "Statuses" %}</th><td>{{ object.statuses|join:", "|placeholder }}</td></tr>
-        <tr><th scope="row">{% trans "Device tags" %}</th><td>{% for tag in object.match_tags.all %}{% tag tag %}{% empty %}{{ ''|placeholder }}{% endfor %}{% if object.match_tags.all %} <span class="text-muted">({{ object.get_tag_match_display }})</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Tags" %}</th><td>{% for tag in object.match_tags.all %}{% tag tag %}{% empty %}{{ ''|placeholder }}{% endfor %}{% if object.match_tags.all %} <span class="text-muted">({{ object.get_tag_match_display }})</span>{% endif %}</td></tr>
         <tr><th scope="row">{% trans "Advanced condition" %}</th><td>{% if object.constraint %}<pre class="mb-0">{{ object.constraint|json }}</pre>{% else %}{{ ''|placeholder }}{% endif %}</td></tr>
       </table>
     </div>
@@ -54,10 +50,10 @@
       </table>
     </div>
     <div class="card">
-      <h2 class="card-header">{% blocktrans with n=device_count %}Series ({{ n }} devices){% endblocktrans %}</h2>
+      <h2 class="card-header">{% blocktrans with n=object_count kinds=kind.label_plural %}Series ({{ n }} {{ kinds }}){% endblocktrans %}</h2>
       {% if series %}
       <table class="table table-hover">
-        <thead><tr><th>{% trans "Series" %}</th><th>{% trans "Devices" %}</th><th>{% trans "Highest" %}</th><th>{% trans "Next name" %}</th></tr></thead>
+        <thead><tr><th>{% trans "Series" %}</th><th>{{ kind.label_plural|capfirst }}</th><th>{% trans "Highest" %}</th><th>{% trans "Next name" %}</th></tr></thead>
         <tbody>
         {% for s in series %}
           <tr>
@@ -70,9 +66,9 @@
         </tbody>
       </table>
       {% else %}
-      <div class="card-body text-muted">{% trans "No devices follow this rule yet." %}</div>
+      <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}No {{ kinds }} follow this rule yet.{% endblocktrans %}</div>
       {% endif %}
-      {% if truncated %}<div class="card-footer text-muted">{% trans "Only the first 2000 devices are shown." %}</div>{% endif %}
+      {% if truncated %}<div class="card-footer text-muted">{% blocktrans with kinds=kind.label_plural %}Only the first 2000 {{ kinds }} are counted.{% endblocktrans %}</div>{% endif %}
     </div>
     <div class="card">
       <h2 class="card-header">{% blocktrans with n=drifted_count %}Not following this rule ({{ n }}){% endblocktrans %}</h2>
@@ -80,14 +76,14 @@
         <form action="{% url 'plugins:netbox_naming_convention:namingrule_rename' pk=object.pk %}" method="post">
           {% csrf_token %}
           {% render_table drifted_table 'inc/table.html' %}
-          {% if perms.dcim.change_device %}
+          {% if can_rename %}
           <div class="card-footer text-end">
             <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-rename-outline"></i> {% trans "Rename selected to the suggested names" %}</button>
           </div>
           {% endif %}
         </form>
       {% else %}
-        <div class="card-body text-muted">{% trans "Every device of this rule follows it." %}</div>
+        <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}All {{ kinds }} of this rule follow it.{% endblocktrans %}</div>
       {% endif %}
     </div>
   </div>

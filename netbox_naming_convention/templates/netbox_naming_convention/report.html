@@ -1,0 +1,71 @@
+{% extends 'generic/_base.html' %}
+{% load render_table from django_tables2 %}
+{% load i18n %}
+
+{% block title %}{% trans "Naming report" %}{% endblock %}
+
+{% block tabs %}
+<ul class="nav nav-tabs">
+  {% for other in kinds %}
+  <li class="nav-item">
+    <a class="nav-link{% if other == kind %} active{% endif %}" href="?object_type={{ other.key }}">{{ other.label_plural|capfirst }}</a>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col col-12 col-xl-4">
+    <div class="card">
+      <h2 class="card-header">{% blocktrans with n=report.total kinds=kind.label_plural %}{{ n }} {{ kinds }}{% endblocktrans %}</h2>
+      <div class="list-group list-group-flush">
+        <a href="?object_type={{ kind.key }}&show=drifted" class="list-group-item list-group-item-action d-flex{% if show == 'drifted' %} active{% endif %}">
+          {% trans "Name doesn't follow its rule" %}<span class="ms-auto">{{ report.counts.drifted }}</span>
+        </a>
+        <a href="?object_type={{ kind.key }}&show=unnamed" class="list-group-item list-group-item-action d-flex{% if show == 'unnamed' %} active{% endif %}">
+          {% trans "No name yet" %}<span class="ms-auto">{{ report.counts.unnamed }}</span>
+        </a>
+        <a href="?object_type={{ kind.key }}&show=no_rule" class="list-group-item list-group-item-action d-flex{% if show == 'no_rule' %} active{% endif %}">
+          {% trans "No rule names it" %}<span class="ms-auto">{{ report.counts.no_rule }}</span>
+        </a>
+        <a href="?object_type={{ kind.key }}&show=follows" class="list-group-item list-group-item-action d-flex{% if show == 'follows' %} active{% endif %}">
+          {% trans "Follows its rule" %}<span class="ms-auto">{{ report.counts.follows }}</span>
+        </a>
+      </div>
+      {% if report.truncated %}<div class="card-footer text-muted">{% blocktrans with kinds=kind.label_plural %}Only the first {{ limit }} {{ kinds }} are counted.{% endblocktrans %}</div>{% endif %}
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "Rules" %}</h2>
+      {% if report.rules %}
+      <table class="table table-hover">
+        <thead><tr><th>{% trans "Rule" %}</th><th>{{ kind.label_plural|capfirst }}</th><th>{% trans "To fix" %}</th></tr></thead>
+        {% for entry in report.rules %}
+        <tr><td><a href="{{ entry.rule.get_absolute_url }}">{{ entry.rule }}</a></td><td>{{ entry.count }}</td><td>{{ entry.drifted }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}No rule names any {{ kinds }} yet.{% endblocktrans %}</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col col-12 col-xl-8">
+    <div class="card">
+      {% if report.shown %}
+        <form action="{% url 'plugins:netbox_naming_convention:report_rename' %}?object_type={{ kind.key }}" method="post">
+          {% csrf_token %}
+          {% render_table table 'inc/table.html' %}
+          {% if report.shown|length >= shown_limit %}<div class="card-footer text-muted">{% blocktrans with kinds=kind.label_plural %}The first {{ shown_limit }} {{ kinds }} are listed.{% endblocktrans %}</div>{% endif %}
+          {% if can_rename %}
+          <div class="card-footer text-end">
+            <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-rename-outline"></i> {% trans "Rename selected to the suggested names" %}</button>
+          </div>
+          {% endif %}
+        </form>
+      {% else %}
+        <div class="card-body text-muted">{% trans "Nothing here." %}</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

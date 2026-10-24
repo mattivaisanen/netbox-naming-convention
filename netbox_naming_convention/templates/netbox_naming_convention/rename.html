@@ -1,20 +1,20 @@
 {% extends 'base/layout.html' %}
 {% load i18n %}
 
-{% block title %}{% blocktrans with rule=object %}Rename devices to the rule "{{ rule }}"{% endblocktrans %}{% endblock %}
+{% block title %}{% if rule %}{% blocktrans with kinds=kind.label_plural %}Rename {{ kinds }} to the rule "{{ rule }}"{% endblocktrans %}{% else %}{% blocktrans with kinds=kind.label_plural %}Rename {{ kinds }} to their rules{% endblocktrans %}{% endif %}{% endblock %}
 
 {% block content %}
 <div class="row">
   <div class="col col-12 col-xl-8">
     {% if rows %}
     <div class="card">
-      <h2 class="card-header">{% blocktrans count counter=rows|length %}{{ counter }} device gets a new name{% plural %}{{ counter }} devices get a new name{% endblocktrans %}</h2>
+      <h2 class="card-header">{% blocktrans with n=rows|length %}New names ({{ n }}){% endblocktrans %}</h2>
       <table class="table table-hover">
-        <thead><tr><th>{% trans "Device" %}</th><th>{% trans "Now" %}</th><th></th><th>{% trans "New name" %}</th></tr></thead>
-        {% for device, name in rows %}
+        <thead><tr><th>{{ kind.label }}</th><th>{% trans "Now" %}</th><th></th><th>{% trans "New name" %}</th></tr></thead>
+        {% for obj, name in rows %}
         <tr>
-          <td><a href="{{ device.get_absolute_url }}">{{ device.pk }}</a></td>
-          <td class="font-monospace text-danger">{{ device.name|default:"—" }}</td>
+          <td><a href="{{ obj.get_absolute_url }}">{{ obj.pk }}</a></td>
+          <td class="font-monospace text-danger">{{ obj.name|default:"—" }}</td>
           <td class="text-muted px-0"><i class="mdi mdi-arrow-right"></i></td>
           <td class="font-monospace text-success">{{ name }}</td>
         </tr>
@@ -26,8 +26,8 @@
     <div class="card">
       <h2 class="card-header">{% trans "Not renamed" %}</h2>
       <table class="table table-hover">
-        {% for device, reason in skipped %}
-        <tr><td><a href="{{ device.get_absolute_url }}">{{ device }}</a></td><td class="text-muted">{{ reason }}</td></tr>
+        {% for obj, reason in skipped %}
+        <tr><td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td><td class="text-muted">{{ reason }}</td></tr>
         {% endfor %}
       </table>
     </div>
@@ -40,11 +40,11 @@
       <input type="hidden" name="import_method" value="direct">
       <input type="hidden" name="_naming_rename" value="1">
       <p class="text-muted">
-        {% trans "The names are saved through NetBox's device import, like any bulk edit: with your permissions, in the change log, and through approval when netbox-change-approval is installed. A number someone takes in the meantime makes that row fail; open this page again for fresh names." %}
+        {% trans "The names are saved through NetBox's import, like any bulk edit: with your permissions, in the change log, and through approval when netbox-change-approval is installed. A number someone takes in the meantime makes that row fail; open this page again for fresh names." %}
       </p>
       <div class="text-end">
-        <a href="{{ object.get_absolute_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
-        {% if rows %}<button type="submit" class="btn btn-primary">{% blocktrans count counter=rows|length %}Rename {{ counter }} device{% plural %}Rename {{ counter }} devices{% endblocktrans %}</button>{% endif %}
+        <a href="{{ back_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+        {% if rows %}<button type="submit" class="btn btn-primary">{% blocktrans with n=rows|length %}Rename {{ n }}{% endblocktrans %}</button>{% endif %}
       </div>
     </form>
   </div>

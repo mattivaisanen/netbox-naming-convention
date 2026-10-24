@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from dcim.models import DeviceRole, DeviceType, Site
 from netbox.filtersets import NetBoxModelFilterSet
 
-from .models import EnforcementChoices, NamingRule, NumberSourceChoices
+from .models import EnforcementChoices, NamingRule, NumberSourceChoices, ObjectTypeChoices
 
 
 class NamingRuleFilterSet(NetBoxModelFilterSet):
@@ -18,6 +18,7 @@ class NamingRuleFilterSet(NetBoxModelFilterSet):
     site_id = django_filters.ModelMultipleChoiceFilter(
         field_name='sites', queryset=Site.objects.all(), label=_('Site (ID)'),
     )
+    object_type = django_filters.MultipleChoiceFilter(choices=ObjectTypeChoices)
     number_source = django_filters.MultipleChoiceFilter(choices=NumberSourceChoices)
     enforcement = django_filters.MultipleChoiceFilter(choices=EnforcementChoices)
 
