@@ -54,6 +54,17 @@ def is_skipped(number, ranges):
     return any(low <= number <= high for low, high in ranges)
 
 
+def _past_skipped(number, ranges):
+    """`number`, or the first number after the skipped ranges it falls in."""
+    moved = True
+    while moved:
+        moved = False
+        for low, high in ranges:
+            if low <= number <= high:
+                number, moved = high + 1, True
+    return number
+
+
 def series_key(prefix, suffix, scope):
     """The key a series is stored under: case does not matter."""
     if scope == 'name':
@@ -97,17 +108,20 @@ def next_number(used, *, first, last, skip=(), fill_gaps=False, high_water=0):
     - Gap filling on: the lowest free number from `first` on.
     - Gap filling off: one more than the highest number in use or ever handed
       out (`high_water`), and at least `first`.
+
+    Numbers above `last` (a name typed by hand, such as SW5000 in a 3-digit
+    series) are outside the range and don't count. Skipped ranges are jumped
+    over, not walked through, so "1-999999" costs nothing.
     """
+    used = {number for number in used if number <= last}
     if fill_gaps:
-        number = first
+        number = _past_skipped(first, skip)
         while number <= last:
-            if number not in used and not is_skipped(number, skip):
+            if number not in used:
                 return number
-            number += 1
+            number = _past_skipped(number + 1, skip)
     else:
-        number = max([first - 1, high_water, *used]) + 1
-        while number <= last and is_skipped(number, skip):
-            number += 1
+        number = _past_skipped(max([first - 1, high_water, *used]) + 1, skip)
         if number <= last:
             return number
     raise NumberError(f'No free numbers left ({first} to {last}).')

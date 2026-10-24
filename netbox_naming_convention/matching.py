@@ -11,7 +11,8 @@ Rules are checked by priority (then name); the first enabled rule whose
 conditions all match wins. Within a condition any listed value matches. Roles,
 regions and locations match their children too.
 """
-from django.db.models import Manager, QuerySet
+from django.core.exceptions import FieldDoesNotExist
+from django.db.models import Manager
 
 from .models import NamingRule, TagMatchChoices
 
@@ -82,28 +83,93 @@ def device_tag_slugs(device):
     return set()
 
 
+#: Models an advanced condition may not look into: users (their passwords),
+#: their API tokens and preferences. Which rule names a device shows on every
+#: device form, so a condition such as
+#: journal_entries__created_by__password__startswith would let anyone who may
+#: edit rules read a password hash one character at a time.
+_PRIVATE_MODELS = {'users.user', 'users.token', 'users.userconfig'}
+
+
+def _is_private(model):
+    return model is not None and (
+        model._meta.label_lower in _PRIVATE_MODELS or model._meta.app_label == 'auth'
+    )
+
+
+def _field(obj, step):
+    """The model field `step` of `obj` that a condition may follow, or None."""
+    meta = getattr(obj, '_meta', None)
+    if meta is None or _is_private(type(obj)):
+        return None
+    try:
+        field = meta.get_field(step)
+    except FieldDoesNotExist:
+        return None
+    return None if _is_private(field.related_model) else field
+
+
 def _walk(value, path):
+    """The values at `path` (field names) from `value`, or None for a path that can't be followed."""
     values = [value]
     for step in path:
         nxt = []
         for v in values:
             if v is None:
                 continue
+            if _field(v, step) is None:
+                return None
             try:
                 got = getattr(v, step)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - a dangling id on an unsaved instance
                 return None
             if isinstance(got, Manager):
                 try:
                     nxt.extend(got.all())
-                except ValueError:
+                except ValueError:  # a reverse relation of an unsaved device
                     pass
-            elif isinstance(got, (list, tuple, set, QuerySet)):
+            elif isinstance(got, (list, tuple, set)):
                 nxt.extend(got)
             else:
                 nxt.append(got)
         values = nxt
     return values
+
+
+def constraint_errors(constraint):
+    """
+    Keys of an advanced condition that name no field of a device, or reach
+    users (see _PRIVATE_MODELS), for the rule form.
+    """
+    from dcim.models import Device
+
+    filters = constraint if isinstance(constraint, list) else [constraint]
+    errors = []
+    for one in filters:
+        if not isinstance(one, dict):
+            errors.append(f'{one!r} is not an object such as {{"serial__startswith": "FOC"}}.')
+            continue
+        for key in one:
+            parts = _split(key)[0]
+            if parts[0] in ('tags', 'custom_field_data'):
+                continue
+            model = Device
+            for step in parts:
+                if model is None:
+                    break  # past a generic relation: checked when matching
+                try:
+                    field = model._meta.get_field(step)
+                except FieldDoesNotExist:
+                    errors.append(f'"{key}": {model._meta.verbose_name} has no field "{step}".')
+                    break
+                if _is_private(field.related_model):
+                    errors.append(f'"{key}": users and their tokens can\'t be used in a condition.')
+                    break
+                if not (field.is_relation or step == parts[-1]):
+                    errors.append(f'"{key}": "{step}" is a value, not a related object.')
+                    break
+                model = field.related_model
+    return errors
 
 
 def _compare(actual, lookup, expected):
@@ -165,11 +231,16 @@ def constraint_matches(constraint, device):
     return False
 
 
-def _term_matches(device, key, expected):
+def _split(key):
+    """"site__name__iexact" -> (['site', 'name'], 'iexact')."""
     parts = key.split('__')
-    lookup = 'exact'
     if len(parts) > 1 and parts[-1] in _LOOKUPS:
-        lookup = parts.pop()
+        return parts[:-1], parts[-1]
+    return parts, 'exact'
+
+
+def _term_matches(device, key, expected):
+    parts, lookup = _split(key)
     if parts[0] == 'tags':
         slugs = device_tag_slugs(device)
         field = parts[1] if len(parts) > 1 else 'slug'

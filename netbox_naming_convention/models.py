@@ -307,8 +307,14 @@ class NamingRule(NetBoxModel):
             errors['skip_numbers'] = str(e)
         if self.number_last is not None and self.number_last < self.number_first:
             errors['number_last'] = _('The last number must not be lower than the first.')
-        if self.constraint is not None and not isinstance(self.constraint, (dict, list)):
-            errors['constraint'] = _('Use a JSON object or a list of objects.')
+        if self.constraint is not None:
+            if isinstance(self.constraint, (dict, list)):
+                from .matching import constraint_errors
+
+                if problems := constraint_errors(self.constraint):
+                    errors['constraint'] = problems
+            else:
+                errors['constraint'] = _('Use a JSON object or a list of objects.')
         if errors:
             raise ValidationError(errors)
 
