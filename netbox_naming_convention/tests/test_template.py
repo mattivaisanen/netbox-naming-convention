@@ -82,6 +82,15 @@ class NumberTests(SimpleTestCase):
         self.assertEqual(next_number({1, 2}, first=0, last=999, skip=skip, fill_gaps=True), 5)
         self.assertEqual(next_number({1, 2}, first=1, last=999, skip=skip), 5)
 
+    def test_large_skipped_range_is_jumped_over(self):
+        skip = parse_skip('1-999999990, 999999992')
+        for fill_gaps in (False, True):
+            self.assertEqual(next_number(set(), first=1, last=999999999, skip=skip, fill_gaps=fill_gaps), 999999991)
+        self.assertEqual(next_number({999999991}, first=1, last=999999999, skip=skip, fill_gaps=True), 999999993)
+
+    def test_number_above_the_range_does_not_fill_the_series(self):
+        self.assertEqual(next_number({1, 5000}, first=1, last=999), 2)
+
     def test_full(self):
         with self.assertRaises(NumberError):
             next_number({1, 2, 3}, first=1, last=3)

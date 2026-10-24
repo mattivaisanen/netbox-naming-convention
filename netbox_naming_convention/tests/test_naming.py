@@ -8,8 +8,9 @@ from django.test import TestCase, TransactionTestCase
 from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
 from ipam.models import IPAddress
+from utilities.exceptions import AbortRequest
 
-from ..models import EnforcementChoices, NamingSeries, NumberScopeChoices, NumberSourceChoices
+from ..models import EnforcementChoices, NamingRule, NamingSeries, NumberScopeChoices, NumberSourceChoices
 from ..naming import suggest
 from .utils import NetBoxData
 
@@ -172,6 +173,22 @@ class NamingTests(NetBoxData, TestCase):
         self.device(name='FITASWI050_JK8', rack=self.jk8).delete()
         self.assertEqual(self.device(rack=self.jk8).name, 'FITASWI051_JK8')
 
+    def test_typed_name_above_the_range_is_not_remembered(self):
+        # Too big for the high-water column, and not the rule's to hand out.
+        self.device(name='FITASWI99999999999_JK8', rack=self.jk8)
+        self.assertFalse(NamingSeries.objects.filter(key='fitaswi', high_water__gt=0).exists())
+        self.assertEqual(self.device(rack=self.jk8).name, 'FITASWI001_JK8')
+
+    def test_number_taken_between_validation_and_save_is_refused(self):
+        self.switches.number_last = 1
+        self.switches.save()
+        device = self.device(rack=self.jk8, save=False)
+        device.full_clean()
+        self.assertEqual(device.name, 'FITASWI001_JK8')
+        self.device(name='FITASWI001_JK9', rack=self.jk9)  # takes the last number meanwhile
+        with self.assertRaises(AbortRequest):
+            device.save()
+
     def test_refuse_enforcement(self):
         self.switches.enforcement = EnforcementChoices.REFUSE
         self.switches.save()
@@ -230,6 +247,17 @@ class NamingTests(NetBoxData, TestCase):
         self.switches.save()
         self.assertIsNone(self.device(rack=self.jk8, serial='ABC').name)
         self.assertEqual(self.device(rack=self.jk8, serial='FOC1').name, 'FITASWI001_JK8')
+
+    def test_advanced_condition_cannot_read_users(self):
+        secret = {'journal_entries__created_by__password__startswith': 'pbkdf2'}
+        for constraint in (secret, {'nonsense__exact': 1}):
+            self.switches.constraint = constraint
+            with self.assertRaises(ValidationError) as caught:
+                self.switches.full_clean()
+            self.assertIn('constraint', caught.exception.message_dict)
+        # A rule saved with it anyway (through the database) never matches.
+        NamingRule.objects.filter(pk=self.switches.pk).update(constraint=secret)
+        self.assertIsNone(self.device(rack=self.jk8).name)
 
     def test_rule_needs_valid_template(self):
         self.switches.template = '{site}'

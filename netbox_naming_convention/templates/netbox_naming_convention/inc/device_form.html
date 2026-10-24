@@ -94,11 +94,6 @@ document.addEventListener('DOMContentLoaded', function () {
   var group = document.createElement('div');
   group.className = 'input-group';
   input.parentNode.insertBefore(group, input);
-  var padlock = document.createElement('span');
-  padlock.className = 'input-group-text';
-  padlock.hidden = true;
-  padlock.innerHTML = '<i class="mdi mdi-lock-outline"></i>';
-  group.appendChild(padlock);
   group.appendChild(input);
   var again = document.createElement('button');
   again.type = 'button';
@@ -176,7 +171,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function lock(on) {
     input.readOnly = on;
-    padlock.hidden = !on;
     input.style.backgroundColor = on ? 'var(--tblr-secondary-bg, #e5e7eb)' : '';
     input.style.color = on ? 'var(--tblr-secondary, #6b7280)' : '';
     if (MODE === 'add') {

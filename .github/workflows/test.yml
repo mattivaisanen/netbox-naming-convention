@@ -1,9 +1,10 @@
 name: Test
 
+# Pull requests only (a merge to main was already tested as its PR), and two
+# jobs rather than four, to save Actions minutes.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -11,10 +12,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Oldest supported release and the latest tested one.
-        netbox: [v4.7.0, v4.7.3]
-        # On its own, and next to netbox-change-approval.
-        plugins: [none, all]
+        # The oldest supported release on its own, and the latest tested one
+        # next to netbox-change-approval.
+        include:
+          - netbox: v4.7.0
+            plugins: none
+          - netbox: v4.7.3
+            plugins: all
     env:
       NETBOX_REF: ${{ matrix.netbox }}
 
