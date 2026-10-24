@@ -160,7 +160,7 @@ DEVICE = Kind(
     max_name=64,
     form_fields=('site', 'location', 'rack', 'role', 'device_type', 'tenant', 'platform', 'status', 'serial',
                  'asset_tag', 'primary_ip4', 'primary_ip6'),
-    kind_fields=('role', 'device_type'),
+    kind_fields=('site', 'role', 'device_type'),
     add_view='dcim:device_add',
     edit_view='dcim:device_edit',
     import_view='dcim:device_bulk_import',

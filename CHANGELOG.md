@@ -55,7 +55,7 @@ Fixed:
   when the other matched more (a switch tagged OT got the general switch
   rule). Now the rule with more kinds of conditions wins on a tie.
 - The grayed-out name field was hard to tell from a normal one. It is now
-  clearly gray, with a padlock.
+  clearly gray.
 - Examples in the documentation and help texts are generic.
 - On the edit form, typing in the name field changed the suggestion to the
   next free number. The suggestion now comes from the name the device has.
@@ -78,6 +78,10 @@ Fixed:
   preferences any more, and the rule form refuses fields devices don't have.
 - The rule page and *Rename selected* ran many database queries per device;
   they run far fewer now.
+- On the device form, clearing a field the name waits for (such as the
+  site) after a rule had filled in the name left the name field open to
+  typing, or kept the old suggestion on the edit form. The name is now
+  taken away and the field waits again until the field is set.
 
 ## 0.1.0 (2026-10-23)
 

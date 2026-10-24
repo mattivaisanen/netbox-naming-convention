@@ -176,13 +176,18 @@ because `head()` is the only hook on edit pages) adds
 (`Kind.add_view`, `Kind.edit_view`). The script sends `object_type` and the
 form's values (`Kind.form_fields`) to the suggest endpoint whenever they change
 (form `change` events, plus a check every 1.5 s because TomSelect does not
-always produce one), with the session cookie and CSRF token.
+always produce one), with the session cookie and CSRF token. A field on
+the form that is empty is sent as `null`, so the edit form's suggestion
+does not fall back to the device's saved value.
 
-- Add: the field starts locked (read-only, grayed, a padlock in front)
+- Add: the field starts locked (read-only and grayed)
   before anything is chosen, so nobody types a name the rule would have
-  given; for devices it says it is filled in once role and device type
-  (`Kind.kind_fields`) are set. When
-  they are set and no rule matches, the field is NetBox's own again. While
+  given; it says it is filled in once the fields every rule of that kind
+  needs (`Kind.kind_fields`; for devices site, role and device type, what
+  NetBox needs to save one) are set, or for kinds without such fields once
+  anything is chosen. When they are set and no rule matches, the field is
+  NetBox's own again; when one is cleared again, the field goes back to
+  waiting (unless the person unlocked it). While
   locked, the field holds the rule's name and a hidden `_naming_auto=1` goes
   with the form. `signals._form_says_auto()` sees it and treats the name as
   the plugin's, so the number is picked again under the lock at save. The

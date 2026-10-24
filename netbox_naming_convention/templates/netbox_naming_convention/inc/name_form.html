@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', function () {
     suggested: '{{ _("Suggested name")|escapejs }}',
     waiting: '{{ _("Filled in once set")|escapejs }}',
     confirmed: '{{ _("The number is confirmed when you save.")|escapejs }}',
-    kind: '{% if naming_type == "device" %}{{ _("Filled in by a naming rule once the device role and device type are set.")|escapejs }}{% else %}{{ _("Filled in once a naming rule matches what you choose below.")|escapejs }}{% endif %}',
+    kind: '{{ _("Filled in once a naming rule matches what you choose below.")|escapejs }}',
     typing: '{{ _("You are typing your own name.")|escapejs }}',
     parent: '{{ _("parent")|escapejs }}'
   };
@@ -79,8 +79,8 @@ document.addEventListener('DOMContentLoaded', function () {
     return lines;
   }
 
-  function waitingLine() {
-    return [TEXT.waiting, last.missing.map(labelFor).join(', ')];
+  function waitingLine(missing) {
+    return [TEXT.waiting, (missing || last.missing).map(labelFor).join(', ')];
   }
 
   function suggestedLine() {
@@ -96,11 +96,6 @@ document.addEventListener('DOMContentLoaded', function () {
   var group = document.createElement('div');
   group.className = 'input-group';
   input.parentNode.insertBefore(group, input);
-  var padlock = document.createElement('span');
-  padlock.className = 'input-group-text';
-  padlock.hidden = true;
-  padlock.innerHTML = '<i class="mdi mdi-lock-outline"></i>';
-  group.appendChild(padlock);
   group.appendChild(input);
   var again = document.createElement('button');
   again.type = 'button';
@@ -133,7 +128,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var out = {object_type: TYPE};
     FIELDS.forEach(function (key) {
       var value = data.get(key);
-      if (value !== null && value !== '') { out[key] = value; }
+      if (value !== null && value !== '') {
+        out[key] = value;
+      } else if (form.elements[key]) {
+        // Cleared: say so, or the edit form's suggestion keeps the saved value.
+        out[key] = null;
+      }
     });
     out.tags = data.getAll('tags').filter(function (v) { return v !== ''; }).map(Number);
     var cf = {};
@@ -173,7 +173,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function lock(on) {
     input.readOnly = on;
-    padlock.hidden = !on;
     input.style.backgroundColor = on ? 'var(--tblr-secondary-bg, #e5e7eb)' : '';
     input.style.color = on ? 'var(--tblr-secondary, #6b7280)' : '';
     if (MODE === 'add') {
@@ -182,26 +181,32 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  // Whether the form says enough for a rule to match: the fields every rule
-  // needs (a device's role and type), or else anything chosen at all (the
-  // status has a default, so it doesn't count).
-  function kindsSet() {
+  // What the form still lacks before a rule can name the object, as a note
+  // line, or null. Kinds with fields every rule needs (a device's site, role
+  // and device type) wait for those, and say which are missing; other kinds
+  // wait until anything is chosen (the status has a default, so it doesn't
+  // count). Clearing a field again makes the name wait again.
+  function missingNote() {
     var data = new FormData(form);
     if (KIND_FIELDS.length) {
-      return KIND_FIELDS.every(function (key) { return !!data.get(key); });
+      var missing = KIND_FIELDS.filter(function (key) { return form.elements[key] && !data.get(key); });
+      return missing.length ? waitingLine(missing) : null;
     }
-    return FIELDS.some(function (key) { return key !== 'status' && !!data.get(key); });
+    var chosen = FIELDS.some(function (key) { return key !== 'status' && !!data.get(key); });
+    return chosen ? null : TEXT.kind;
   }
 
   function showAdd() {
     var rule = last && last.rule;
     again.hidden = true;
     if (!rule) {
-      if (locked && !kindsSet()) {
-        // Nothing to go on yet: keep the field for the rule.
+      var waiting = missingNote();
+      if (locked && waiting) {
+        // Not enough to go on (yet, or again after a field was cleared):
+        // keep the field for the rule.
         lock(true);
         input.value = '';
-        setNote([TEXT.kind]);
+        setNote([waiting]);
         setIcon('mdi-pencil', TEXT.edit);
         return;
       }
@@ -320,7 +325,11 @@ document.addEventListener('DOMContentLoaded', function () {
   // sees; look for changed values now and then too.
   setInterval(ask, 1500);
   if (locked) { lock(true); }
-  if (MODE === 'add' && locked) { setNote([TEXT.kind]); setIcon('mdi-pencil', TEXT.edit); }
+  if (MODE === 'add' && locked) {
+    var waiting = missingNote();
+    setNote(waiting ? [waiting] : []);
+    setIcon('mdi-pencil', TEXT.edit);
+  }
   ask();
 });
 </script>
