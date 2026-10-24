@@ -263,7 +263,9 @@ def remember(device, rule=None):
     if not has_number or out.error or out.missing:
         return
     number = _number_of(device.name, out.prefix, out.suffix, rule.number_scope)
-    if number is None:
+    # A number outside the rule's range was never the rule's to hand out (and
+    # may not even fit the database column, as in SW99999999999).
+    if number is None or not rule.number_first <= number <= rule.last_number:
         return
     NamingSeries.objects.bulk_create([NamingSeries(key=out.series)], ignore_conflicts=True)
     NamingSeries.objects.filter(key=out.series, high_water__lt=number).update(high_water=number)

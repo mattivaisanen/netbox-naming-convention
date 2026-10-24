@@ -35,7 +35,12 @@ before validation), or from the database for a saved device without them.
 Roles, regions, locations and site groups match their ancestors by walking
 `parent` in Python, so it does not depend on how NetBox stores the
 trees. The advanced condition is evaluated in memory with
-the common lookups, like change-approval's `matching.py`.
+the common lookups, like change-approval's `matching.py`. Each step must be
+a model field (`_meta.get_field()`, so no private attributes or methods),
+and users, tokens and user preferences (`matching._PRIVATE_MODELS`) are never
+followed: which rule matches shows on every device form, so a condition
+could otherwise read a password hash. `constraint_errors()` refuses such
+keys and unknown fields when a rule is saved.
 
 ## Waiting for values
 
@@ -65,7 +70,9 @@ given by hand and names from before the rule count. `NamingSeries` keeps the
 highest number ever handed out per series; without gap filling the next
 number is one more than the higher of that and the highest used number, so a
 deleted device's number never comes back. With gap filling the lowest free
-number from `number_first` wins and the high-water mark is ignored.
+number from `number_first` wins and the high-water mark is ignored. Used
+numbers above the rule's last number don't count, and `next_number()` jumps
+over skipped ranges instead of stepping through them.
 
 `NamingSeries` is a plain model on purpose: approval plugins gate every
 NetBoxModel, and taking a number must never wait for approval. The same
@@ -89,8 +96,13 @@ goes for `AssignedName` (below).
    second device saved at the same moment waits and then sees the first
    (`tests/test_naming.py` `ConcurrencyTests`). Validation runs *outside*
    that transaction in the views, which is why the number is picked again
-   here instead of trusting the one from validation. A name given by hand is
-   only remembered (`remember()` raises the high-water mark).
+   here instead of trusting the one from validation. If no number is free
+   any more (the series filled up meanwhile), pre_save raises
+   `AbortRequest`, which NetBox's views, import and API show as an ordinary
+   error, rather than save the number from validation twice. A device saved
+   without a name (often without validating) just stays unnamed. A name
+   given by hand is only remembered (`remember()` raises the high-water
+   mark, for numbers within the rule's range).
 3. pre_save also covers code that saves without validating: NetBox's IP
    form sets a device's primary IP with a plain `save()`, so a rule that
    numbers by IP names the device right then.

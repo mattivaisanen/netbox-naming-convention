@@ -113,7 +113,7 @@ name. Set different priorities when you want a fixed order.
 | Roles, device types | What kind of device the rule is for. At least one is required. Child roles match too: a rule for *Switch* covers *Switch / Access*. |
 | Regions, site groups, sites, locations, tenants, platforms, statuses | Optional. Within one field any listed value matches; all fields that have values must match. Child regions and locations match too. |
 | Device tags, tag match | Optional. The device needs all (or any) of the tags, for categories of devices that roles don't tell apart. |
-| Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. |
+| Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. Users, their API tokens and preferences can't be used. |
 | Template | How the name is built, see below. |
 | Wait for | The fields that must be set before the name is filled in, besides the values the template uses: site, location, rack, device role, device type, tenant, platform, serial number, asset tag. New rules wait for site, device role and device type (what the device form requires). |
 | Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |
