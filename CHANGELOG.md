@@ -36,7 +36,7 @@ Fixed:
   when the other matched more (a switch tagged OT got the general switch
   rule). Now the rule with more kinds of conditions wins on a tie.
 - The grayed-out name field was hard to tell from a normal one. It is now
-  clearly gray, with a padlock.
+  clearly gray.
 - Examples in the documentation and help texts are generic.
 - On the edit form, typing in the name field changed the suggestion to the
   next free number. The suggestion now comes from the name the device has.

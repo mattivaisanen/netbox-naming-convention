@@ -127,7 +127,7 @@ script sends the form's values to the suggest endpoint whenever they change
 (form `change` events, plus a check every 1.5 s because TomSelect does not
 always produce one), with the session cookie and CSRF token.
 
-- Add: the field starts locked (read-only, grayed, a padlock in front)
+- Add: the field starts locked (read-only and grayed)
   before anything is chosen, so nobody types a name the rule would have
   given; it says it is filled in once role and device type are set. When
   they are set and no rule matches, the field is NetBox's own again. While
