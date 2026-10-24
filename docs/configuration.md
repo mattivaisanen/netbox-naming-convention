@@ -12,7 +12,7 @@ PLUGINS_CONFIG = {
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `device_form` | bool | `True` | On the device add form, lock and gray out the name and fill it in from the matching rule, with a button to type a name instead; on the edit form, gray out a name that follows its rule and offer *Suggest again*. `False` leaves the forms as NetBox has them. Names are still filled in on save either way. |
+| `device_form` | bool | `True` | On the device, virtual machine and rack add forms, lock and gray out the name and fill it in from the matching rule, with a button to type a name instead; on the edit form, gray out a name that follows its rule and offer *Suggest again*. `False` leaves the forms as NetBox has them. Device names are still filled in on save either way; virtual machines and racks need a name on their forms then. |
 
 Everything else is set per rule under **Naming → Naming rules** (see the
 README).
@@ -21,11 +21,11 @@ README).
 
 | Permission | Allows |
 | --- | --- |
-| `netbox_naming_convention.view_namingrule` | Seeing rules, their series and the devices that don't follow them |
+| `netbox_naming_convention.view_namingrule` | Seeing rules, their series and the objects that don't follow them |
 | `netbox_naming_convention.add_namingrule`, `change_namingrule`, `delete_namingrule` | Managing rules |
-| `dcim.add_device` or `dcim.change_device` | Using the suggest endpoint (the device form uses it) |
+| `dcim.add_device` or `dcim.change_device` (and the same for virtual machines and racks) | Using the suggest endpoint for that kind of object (the forms use it) |
 | (signed in) | The template reference page (*All values and filters* on the rule form) |
 
-Naming a device needs no permission of its own: it happens as part of
-saving the device, with the permissions of whoever saves it. The suggest
+Naming an object needs no permission of its own: it happens as part of
+saving it, with the permissions of whoever saves it. The suggest
 endpoint only reads objects the user may view.

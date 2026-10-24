@@ -1,13 +1,17 @@
 # netbox-naming-convention
 
-A NetBox plugin that names devices from rules. A rule says which devices it
-is for (a role or a device type, plus any of site, region, location, tags,
-tenant, platform, status) and how their names are built, for example
+A NetBox plugin that names devices, virtual machines and racks from rules. A
+rule says which objects it is for (for devices a role or a device type, plus
+any of site, region, location, tags, tenant, platform, status) and how their
+names are built, for example
 `{site.slug|upper}-{role.slug|first:2|upper}{n}-{rack.name}`. That rule
 gives a switch in rack R01 at the site `ams1` the name `AMS1-SW014-R01`,
 where 014 is the next free number of the series `AMS1-SW`.
 
 ## What it does
+
+Everything below works the same for devices, virtual machines and racks;
+"device" stands for any of them.
 
 - **Fills in names.** A new device saved without a name gets the name of
   its rule: in the web UI, through the REST API and in CSV imports.
@@ -112,12 +116,15 @@ name. Set different priorities when you want a fixed order.
 
 | Field | Meaning |
 | --- | --- |
-| Roles, device types | What kind of device the rule is for. At least one is required. Child roles match too: a rule for *Switch* covers *Switch / Access*. |
+| Names | What the rule names: devices, virtual machines or racks. The form shows the conditions, *Wait for* values and template values of that kind. |
+| Roles, device types | Devices: what kind of device the rule is for. At least one is required. Child roles match too: a rule for *Switch* covers *Switch / Access*. |
+| Roles, virtual machine types, clusters | Virtual machines, optional. A rule without conditions names every virtual machine. |
+| Rack roles, rack types | Racks, optional. A rule without conditions names every rack. |
 | Regions, site groups, sites, locations, tenants, platforms, statuses | Optional. Within one field any listed value matches; all fields that have values must match. Child regions and locations match too. |
 | Device tags, tag match | Optional. The device needs all (or any) of the tags, for categories of devices that roles don't tell apart. |
 | Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. Users, their API tokens and preferences can't be used. |
 | Template | How the name is built, see below. |
-| Wait for | The fields that must be set before the name is filled in, besides the values the template uses: site, location, rack, device role, device type, tenant, platform, serial number, asset tag. New rules wait for site, device role and device type (what the device form requires). |
+| Wait for | The fields that must be set before the name is filled in, besides the values the template uses, such as site, location, rack, role, device type, cluster, tenant, platform, serial number or asset tag (the form lists those of the rule's kind). New device rules wait for site, role and device type (what the device form requires), rack rules for the site, virtual machine rules for nothing. |
 | Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |
 | Number source | *Running number* or *From primary IP*. |
 | Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. |
@@ -161,6 +168,15 @@ same lists as below.
 | `{device.serial}`, `{device.asset_tag}` | the device's own values |
 | `{{`, `}}` | literal braces |
 
+Virtual machines have `{site.…}`, `{region.…}`, `{site_group.…}`,
+`{cluster.name}`, `{cluster_type.slug}`, `{cluster_group.slug}`,
+`{role.…}`, `{vm_type.slug}`, `{tenant.…}`, `{platform.…}` and
+`{vm.serial}`. Racks have `{site.…}`, `{region.…}`, `{site_group.…}`,
+`{location.…}`, `{role.…}` (the rack role), `{rack_type.model}`,
+`{manufacturer.…}`, `{tenant.…}` and `{rack.facility_id}`,
+`{rack.serial}`, `{rack.asset_tag}`. The reference page has a list per
+kind.
+
 Filters change a value, from left to right: `{site.name|first:2|upper}`. To apply one to the
 whole name instead, put it in the rule's *Filters for the whole name*.
 
@@ -181,7 +197,8 @@ like the rule's *Wait for* fields: under the name the device form shows the
 rule, what names look like (`AMS1-SW###-[Rack]`) and what it still waits
 for. A device saved
 without that value is saved without a name, unless the rule refuses names
-that don't fit.
+that don't fit. Virtual machines and racks can't be saved without a name, so
+for them the missing value is an error until it is set (or a name is typed).
 
 ### Examples
 
@@ -193,18 +210,28 @@ that don't fit.
 | A tagged group (tag `lab`) | `LAB-{device_type.model}-{n}` | `LAB-C9300-001` |
 | Printers, 4 digits | `{site.slug\|upper}-PRN{n}` | `AMS1-PRN0001` |
 | Numbered by IP | `{site.slug}-sw{n}`, mask `*.*.*.N` | `ams1-sw006` for 10.0.0.6 |
+| Virtual machines per cluster | `{cluster.name\|upper}-VM{n}` | `PROD-VM001` |
+| Racks per site, 2 digits | `{site.slug\|upper}-R{n}` | `AMS1-R01` |
+
+Devices, virtual machines and racks count separately: a rack named
+`AMS1-R01` doesn't take number 1 from devices named `AMS1-R…`. Racks can't
+take their number from an IP (they have none).
 
 ## REST API
 
 - `/api/plugins/naming-convention/rules/`: the rules (create, read, update,
   delete), like any NetBox object.
-- `POST /api/plugins/naming-convention/suggest/`: send a device's values
-  (`site`, `role`, `rack`, `device_type`, `tags` as ids, ...; or `device`
-  for an existing one) and get the rule, the name, the number and the values
-  it still waits for. Saves and reserves nothing. Needs permission to add or
-  change devices.
-- `POST /api/dcim/devices/` without a `name` gets the rule's name, as in
-  the web UI.
+- `POST /api/plugins/naming-convention/suggest/`: send `object_type`
+  (`device`, the default, `virtualmachine` or `rack`) and the object's values
+  (`site`, `role`, `rack`, `cluster`, `device_type`, `tags` as ids, ...; or
+  `id` for an existing one) and get the rule, the name, the number and the
+  values it still waits for. Saves and reserves nothing. Needs permission to
+  add or change that kind of object.
+- `POST /api/dcim/devices/`, `/api/virtualization/virtual-machines/` and
+  `/api/dcim/racks/` without a `name` get the rule's name, as in the web UI.
+  For virtual machines and racks without a rule NetBox still requires a name.
+- CSV import fills in names of devices only; NetBox's import form requires a
+  name for virtual machines and racks.
 
 ## With netbox-change-approval
 

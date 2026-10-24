@@ -1,22 +1,24 @@
 """
-Which rule names a device.
+Which rule names an object (a device, virtual machine or rack).
 
-Matching works on the device as it is in memory, because a device being
+Matching works on the object as it is in memory, because an object being
 created has no database row yet: its role, site, rack and so on are read from
 the instance, its tags from what the form or the API is about to save
 (`instance._m2m_values['tags']`, set by NetBox before validation) or, for a
-saved device without such values, from the database.
+saved object without such values, from the database.
 
-Rules are checked by priority (then name); the first enabled rule whose
-conditions all match wins. Within a condition any listed value matches. Roles,
-regions and locations match their children too.
+Only rules for the object's kind are tried (kinds.py). Rules are checked by
+priority (then name); the first enabled rule whose conditions all match wins.
+Within a condition any listed value matches. Roles, regions and locations
+match their children too.
 """
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Manager
 
+from .kinds import DEVICE, kind_of
 from .models import NamingRule, TagMatchChoices
 
-__all__ = ('find_rule', 'rule_matches', 'device_tag_slugs', 'rules_queryset', 'ordered_rules')
+__all__ = ('find_rule', 'rule_matches', 'object_tag_slugs', 'rules_queryset', 'ordered_rules', 'rule_objects')
 
 _LOOKUPS = {
     'exact', 'iexact', 'in', 'isnull', 'gt', 'gte', 'lt', 'lte',
@@ -24,11 +26,12 @@ _LOOKUPS = {
 }
 
 
-def rules_queryset():
-    return NamingRule.objects.filter(enabled=True).prefetch_related(
-        'roles', 'device_types', 'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms',
-        'match_tags',
-    ).order_by('priority', 'name')
+def rules_queryset(kind=None):
+    """Enabled rules, of one kind (kinds.Kind) or all."""
+    rules = NamingRule.objects.filter(enabled=True)
+    if kind is not None:
+        rules = rules.filter(object_type=kind.key)
+    return rules.prefetch_related(*NamingRule.CONDITION_FIELDS).order_by('priority', 'name')
 
 
 def ordered_rules(rules=None):
@@ -62,7 +65,7 @@ def _related(device, name):
         return None
 
 
-def device_tag_slugs(device):
+def object_tag_slugs(device):
     pending = getattr(device, '_m2m_values', None)
     if pending and 'tags' in pending:
         values = pending['tags'] or []
@@ -136,13 +139,11 @@ def _walk(value, path):
     return values
 
 
-def constraint_errors(constraint):
+def constraint_errors(constraint, kind=DEVICE):
     """
-    Keys of an advanced condition that name no field of a device, or reach
-    users (see _PRIVATE_MODELS), for the rule form.
+    Keys of an advanced condition that name no field of the kind's model, or
+    reach users (see _PRIVATE_MODELS), for the rule form.
     """
-    from dcim.models import Device
-
     filters = constraint if isinstance(constraint, list) else [constraint]
     errors = []
     for one in filters:
@@ -153,7 +154,7 @@ def constraint_errors(constraint):
             parts = _split(key)[0]
             if parts[0] in ('tags', 'custom_field_data'):
                 continue
-            model = Device
+            model = kind.model
             for step in parts:
                 if model is None:
                     break  # past a generic relation: checked when matching
@@ -242,7 +243,7 @@ def _split(key):
 def _term_matches(device, key, expected):
     parts, lookup = _split(key)
     if parts[0] == 'tags':
-        slugs = device_tag_slugs(device)
+        slugs = object_tag_slugs(device)
         field = parts[1] if len(parts) > 1 else 'slug'
         if field not in ('slug', 'name'):
             return False
@@ -263,64 +264,55 @@ def _term_matches(device, key, expected):
     return any(_compare(v, lookup, expected) for v in values)
 
 
-def rule_matches(rule, device, tag_slugs=None):
-    if not rule.enabled:
-        return False
-
-    role = _related(device, 'role')
-    roles = {r.pk for r in rule.roles.all()}
-    types = {t.pk for t in rule.device_types.all()}
-    if not roles and not types:
-        # A rule must say what kind of device it is for.
-        return False
-    if roles and not (role and _with_ancestors(role) & roles):
-        return False
-    if types and device.device_type_id not in types:
-        return False
-
-    site = _related(device, 'site')
-    sites = {s.pk for s in rule.sites.all()}
-    if sites and device.site_id not in sites:
-        return False
-    regions = {r.pk for r in rule.regions.all()}
-    if regions and not (site and site.region_id and _with_ancestors(site.region) & regions):
-        return False
-    groups = {g.pk for g in rule.site_groups.all()}
-    if groups and not (site and site.group_id and _with_ancestors(site.group) & groups):
-        return False
-    locations = {loc.pk for loc in rule.locations.all()}
-    if locations:
-        location = _related(device, 'location')
-        if not (location and _with_ancestors(location) & locations):
+def _condition_matches(condition, pks, obj):
+    """Whether `obj`'s value at condition.path is one of `pks` (or a child of one)."""
+    value = obj
+    for step in condition.path:
+        value = _related(value, step)
+        if value is None:
             return False
-    tenants = {t.pk for t in rule.tenants.all()}
-    if tenants and device.tenant_id not in tenants:
+    found = _with_ancestors(value) if condition.tree else {value.pk}
+    return bool(found & pks)
+
+
+def rule_matches(rule, obj, tag_slugs=None):
+    kind = rule.kind
+    if not rule.enabled or kind_of(obj) is not kind:
         return False
-    platforms = {p.pk for p in rule.platforms.all()}
-    if platforms and device.platform_id not in platforms:
+    if kind.required_conditions and not any(getattr(rule, name).all() for name in kind.required_conditions):
+        # A device rule must say what kind of device it is for.
         return False
-    if rule.statuses and device.status not in rule.statuses:
+    for condition in kind.conditions:
+        pks = {related.pk for related in getattr(rule, condition.field).all()}
+        if pks and not _condition_matches(condition, pks, obj):
+            return False
+    if rule.statuses and obj.status not in rule.statuses:
         return False
 
     wanted = {t.slug for t in rule.match_tags.all()}
     if wanted:
-        have = device_tag_slugs(device) if tag_slugs is None else tag_slugs
+        have = object_tag_slugs(obj) if tag_slugs is None else tag_slugs
         if rule.tag_match == TagMatchChoices.ANY:
             if not wanted & have:
                 return False
         elif not wanted <= have:
             return False
 
-    return constraint_matches(rule.constraint, device)
+    return constraint_matches(rule.constraint, obj)
 
 
-def find_rule(device, rules=None):
-    """The first enabled rule that matches `device` (see ordered_rules()), or None."""
+def find_rule(obj, rules=None):
+    """The first enabled rule for `obj`'s kind that matches it (see ordered_rules()), or None."""
+    kind = kind_of(obj)
+    if kind is None:
+        return None
     tag_slugs = None
-    for rule in ordered_rules(rules):
+    for rule in ordered_rules(rules if rules is not None else rules_queryset(kind)):
+        if rule.kind is not kind:
+            continue
         if rule.match_tags.all() and tag_slugs is None:
-            tag_slugs = device_tag_slugs(device)
-        if rule_matches(rule, device, tag_slugs=tag_slugs):
+            tag_slugs = object_tag_slugs(obj)
+        if rule_matches(rule, obj, tag_slugs=tag_slugs):
             return rule
     return None
 
@@ -336,55 +328,46 @@ def _expand_tree(model, pks):
     return out
 
 
-def rule_devices(rule, limit=None, devices=None):
+def rule_objects(rule, limit=None, objects=None):
     """
-    Devices this rule names: those it matches and no rule before it does.
-    The database narrows them down by the simple conditions; the rest
-    (tags "all", advanced condition, priority) is checked per device.
+    Objects this rule names: those of its kind it matches and no rule before
+    it does. The database narrows them down by the simple conditions; the
+    rest (tags "all", advanced condition, priority) is checked per object.
     `rule` may be an unsaved draft (preview.py); it takes the place of its
-    saved version when rules are compared. `devices` narrows the devices
-    looked at (by default all).
+    saved version when rules are compared. `objects` narrows the objects
+    looked at (by default all of the kind).
     """
-    from dcim.models import Device, DeviceRole, Location, Region
-
-    roles = _expand_tree(DeviceRole, {r.pk for r in rule.roles.all()})
-    types = {t.pk for t in rule.device_types.all()}
-    if not roles and not types:
+    kind = rule.kind
+    if kind.required_conditions and not any(getattr(rule, name).exists() for name in kind.required_conditions):
         return []
-    if devices is None:
-        devices = Device.objects.all()
-    if roles:
-        devices = devices.filter(role_id__in=roles)
-    if types:
-        devices = devices.filter(device_type_id__in=types)
-    if rule.sites.exists():
-        devices = devices.filter(site__in=rule.sites.all())
-    regions = _expand_tree(Region, {r.pk for r in rule.regions.all()})
-    if regions:
-        devices = devices.filter(site__region_id__in=regions)
-    locations = _expand_tree(Location, {loc.pk for loc in rule.locations.all()})
-    if locations:
-        devices = devices.filter(location_id__in=locations)
-    if rule.tenants.exists():
-        devices = devices.filter(tenant__in=rule.tenants.all())
-    if rule.platforms.exists():
-        devices = devices.filter(platform__in=rule.platforms.all())
-    if rule.statuses:
-        devices = devices.filter(status__in=rule.statuses)
-    devices = devices.select_related(
-        'site', 'site__region', 'site__group', 'location', 'rack', 'role', 'device_type',
-        'device_type__manufacturer', 'tenant', 'platform', 'primary_ip4', 'primary_ip6',
-    ).prefetch_related('tags').order_by('name', 'pk')
-    rules = ordered_rules([r for r in rules_queryset() if r.pk != rule.pk] + [rule])
-    out = []
-    for device in devices.iterator(chunk_size=500):
-        slugs = {t.slug for t in device.tags.all()}
-        if not rule_matches(rule, device, tag_slugs=slugs):
+    if objects is None:
+        objects = kind.model.objects.all()
+    related = set()
+    for condition in kind.conditions:
+        wanted = {obj.pk for obj in getattr(rule, condition.field).all()}
+        if not wanted:
             continue
-        first = next((r for r in rules if rule_matches(r, device, tag_slugs=slugs)), None)
+        if condition.tree:
+            wanted = _expand_tree(rule._meta.get_field(condition.field).related_model, wanted)
+        objects = objects.filter(**{'__'.join(condition.path) + '__in': wanted})
+    for root in kind.roots.values():
+        if root:
+            related.add('__'.join(root))
+    if kind.has_primary_ip:
+        related.update(('primary_ip4', 'primary_ip6'))
+    if rule.statuses:
+        objects = objects.filter(status__in=rule.statuses)
+    objects = objects.select_related(*related).prefetch_related('tags').order_by('name', 'pk')
+    rules = ordered_rules([r for r in rules_queryset(kind) if r.pk != rule.pk] + [rule])
+    out = []
+    for obj in objects.iterator(chunk_size=500):
+        slugs = {t.slug for t in obj.tags.all()}
+        if not rule_matches(rule, obj, tag_slugs=slugs):
+            continue
+        first = next((r for r in rules if rule_matches(r, obj, tag_slugs=slugs)), None)
         if first is not rule:
             continue
-        out.append(device)
+        out.append(obj)
         if limit and len(out) >= limit:
             break
     return out

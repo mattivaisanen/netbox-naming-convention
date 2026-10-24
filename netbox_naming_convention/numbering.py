@@ -6,7 +6,7 @@ A series is the text a number counts in: the prefix before the number
 prefix and suffix together ("whole name" scope: AMS1-SW001-R01 and
 AMS1-SW001-R02 are both number 1, of AMS1-SW#-R01 and AMS1-SW#-R02).
 
-Used numbers come from the names devices have in NetBox, compared without
+Used numbers come from the names objects of the rule's kind have in NetBox, compared without
 case, so names given before the rule existed count. With gap filling off,
 the series also remembers the highest number it ever handed out
 (NamingSeries.high_water), so the number of a deleted device never comes
@@ -65,11 +65,14 @@ def _past_skipped(number, ranges):
     return number
 
 
-def series_key(prefix, suffix, scope):
-    """The key a series is stored under: case does not matter."""
-    if scope == 'name':
-        return f'{prefix}#{suffix}'.lower()
-    return prefix.lower()
+def series_key(prefix, suffix, scope, kind='device'):
+    """
+    The key a series is stored under: the kind of object (kinds.Kind.key),
+    then the text, whose case does not matter. Devices and racks named
+    alike count separately.
+    """
+    text = f'{prefix}#{suffix}' if scope == 'name' else prefix
+    return f'{kind}:{text.lower()}'
 
 
 def name_regex(prefix, suffix, scope):
@@ -84,12 +87,10 @@ def name_regex(prefix, suffix, scope):
     return '^' + re.escape(prefix) + r'([0-9]+)([^0-9]|$)'
 
 
-def used_numbers(prefix, suffix, scope, exclude_pk=None):
-    """Numbers devices in NetBox already have in this series."""
-    from dcim.models import Device
-
+def used_numbers(prefix, suffix, scope, model, exclude_pk=None):
+    """Numbers objects of `model` (Device, VirtualMachine, Rack) already have in this series."""
     pattern = name_regex(prefix, suffix, scope)
-    names = Device.objects.filter(name__iregex=pattern)
+    names = model.objects.filter(name__iregex=pattern)
     if exclude_pk:
         names = names.exclude(pk=exclude_pk)
     compiled = re.compile(pattern, re.IGNORECASE)

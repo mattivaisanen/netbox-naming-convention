@@ -116,7 +116,7 @@ class NamingTests(NetBoxData, TestCase):
         second = self.device(rack=self.jk8)
         second.delete()
         self.assertEqual(self.device(rack=self.jk8).name, 'FITASWI003_JK8')
-        self.assertEqual(NamingSeries.objects.get(key='fitaswi').high_water, 3)
+        self.assertEqual(NamingSeries.objects.get(key='device:fitaswi').high_water, 3)
 
     def test_fill_gaps(self):
         self.switches.fill_gaps = True
@@ -176,7 +176,7 @@ class NamingTests(NetBoxData, TestCase):
     def test_typed_name_above_the_range_is_not_remembered(self):
         # Too big for the high-water column, and not the rule's to hand out.
         self.device(name='FITASWI99999999999_JK8', rack=self.jk8)
-        self.assertFalse(NamingSeries.objects.filter(key='fitaswi', high_water__gt=0).exists())
+        self.assertFalse(NamingSeries.objects.filter(key='device:fitaswi', high_water__gt=0).exists())
         self.assertEqual(self.device(rack=self.jk8).name, 'FITASWI001_JK8')
 
     def test_number_taken_between_validation_and_save_is_refused(self):

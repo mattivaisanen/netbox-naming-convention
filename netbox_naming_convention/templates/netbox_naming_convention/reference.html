@@ -10,7 +10,7 @@
       {% blocktrans trimmed %}
         A template is literal text with parts in braces. A value can be changed by filters, applied from
         left to right: <code>{site.name|first:3|upper}</code>. A value that is empty makes the name wait for
-        it (the device form says what is missing), unless the part has <code>optional</code> or
+        it (the object's form says what is missing), unless the part has <code>optional</code> or
         <code>default</code>.
       {% endblocktrans %}
     </p>
@@ -23,7 +23,12 @@
       </table>
     </div>
     <div class="card">
-      <h2 class="card-header">{% trans "Values" %}</h2>
+      <h2 class="card-header">
+        {% blocktrans with kind=kind.label %}Values of a {{ kind }}{% endblocktrans %}
+        <span class="ms-2 fs-5">
+          {% for other in kinds %}{% if other != kind %}<a href="?object_type={{ other.key }}" class="ms-2">{{ other.label }}</a>{% endif %}{% endfor %}
+        </span>
+      </h2>
       <div class="card-body text-muted pb-0">
         {% blocktrans trimmed %}
           A value is a place and an attribute. <code>parent</code> goes one level up in roles, regions,

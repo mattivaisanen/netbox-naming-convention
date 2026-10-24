@@ -4,6 +4,14 @@
 
 New:
 
+- Rules can name virtual machines and racks too. A rule's *Names* field
+  says which; the form then shows that kind's conditions (clusters,
+  virtual machine types, rack roles, rack types...), *Wait for* values and
+  template values (`{cluster.name}`, `{rack.facility_id}`...). Virtual
+  machine and rack forms get the same locked name field, the naming panel
+  and *Suggest again*, the REST API fills in their names, and the rule page
+  renames them in bulk. Devices, virtual machines and racks count their
+  numbers separately. Existing rules keep naming devices.
 - The rule form previews the rule as you type: what names look like, the
   names it would give the first ten of its devices, and the name a device
   you pick would get (and whether another rule names it first). Nothing is

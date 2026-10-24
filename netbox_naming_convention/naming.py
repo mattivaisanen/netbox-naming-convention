@@ -1,15 +1,16 @@
 """
-Names for devices: what the rule suggests, and taking a number for real.
+Names for objects (devices, virtual machines, racks): what the rule
+suggests, and taking a number for real.
 
-- `suggest()` works out the name a device would get, without saving or
-  reserving anything (the device form, the API's suggest endpoint, the
-  device panel).
+- `suggest()` works out the name an object would get, without saving or
+  reserving anything (the object forms, the API's suggest endpoint, the
+  naming panel).
 - `assign()` does it for real while the series row is locked, inside the
-  save's transaction, so two devices saved at the same time never get the
+  save's transaction, so two objects saved at the same time never get the
   same number. signals.py calls it.
 - `check_typed_name()` is the "refuse" enforcement for names people type.
-- `follows()` tells whether a device's name fits its rule (device panel,
-  the rule's list of devices that don't).
+- `follows()` tells whether an object's name fits its rule (naming panel,
+  the rule's list of objects that don't).
 """
 import re
 from contextvars import ContextVar
@@ -25,13 +26,9 @@ from .models import AssignedName, NamingSeries, NumberSourceChoices
 from .numbering import (
     NumberError, is_skipped, name_regex, next_number, number_from_ip, series_key, used_numbers,
 )
-from .template import NUMBER, ROOTS, TemplateError, filter_name
+from .template import NUMBER, TemplateError, filter_name
 
 __all__ = ('Suggestion', 'suggest', 'assign', 'check_typed_name', 'follows', 'resolve', 'mark_auto', 'is_auto')
-
-#: Longest name NetBox accepts for a device.
-MAX_NAME = 64
-
 
 @dataclass
 class Suggestion:
@@ -44,9 +41,9 @@ class Suggestion:
     #: Values the name waits for ("rack", "primary IP").
     missing: list = field(default_factory=list)
     error: str = None
-    #: The device keeps the number it has (only when editing).
+    #: The object keeps the number it has (only when editing).
     kept_number: bool = False
-    #: The rule's name for this device with ### for the number, such as
+    #: The rule's name for this object with ### for the number, such as
     #: AMS1-SW###-<rack> (see Rendered.pattern).
     pattern: str = ''
 
@@ -69,11 +66,10 @@ class Suggestion:
         }
 
 
-def resolve(device, path):
-    """The value of a template path (see template.py) for `device`, or ''."""
+def resolve(obj, path, kind):
+    """The value of a template path (see template.py) for `obj` of `kind`, or ''."""
     root, *rest = path
-    obj = device
-    for step in ROOTS[root]:
+    for step in kind.roots[root]:
         obj = _related(obj, step)
         if obj is None:
             return ''
@@ -94,17 +90,18 @@ def resolve(device, path):
     return ''
 
 
-def _primary_ip(device):
-    return _related(device, 'primary_ip4') or _related(device, 'primary_ip6')
+def _primary_ip(obj):
+    return _related(obj, 'primary_ip4') or _related(obj, 'primary_ip6')
 
 
-def _has_value(device, key):
-    if key in ('serial', 'asset_tag'):
-        return bool(getattr(device, key, None))
-    return _related(device, key) is not None
+def _has_value(obj, key):
+    """Whether a field the rule waits for (RequiredValueChoices) is set."""
+    if obj._meta.get_field(key).is_relation:
+        return _related(obj, key) is not None
+    return bool(getattr(obj, key, None))
 
 
-def _render(device, rule):
+def _render(obj, rule):
     """(Suggestion with prefix/suffix/series/missing filled in, has_number)."""
     out = Suggestion(rule=rule)
     try:
@@ -112,17 +109,18 @@ def _render(device, rule):
     except TemplateError as e:
         out.error = _('The rule "{rule}" has a broken template: {error}').format(rule=rule, error=e)
         return out, False
-    rendered = template.render(lambda path: resolve(device, path))
+    kind = rule.kind
+    rendered = template.render(lambda path: resolve(obj, path, kind))
     filters = rule.parsed_name_filters
     out.prefix = filter_name(rendered.prefix, filters)
     out.suffix = filter_name(rendered.suffix, filters)
     # Fields the rule waits for, in the rule's order, before the template's own.
-    waiting = [key for key in rule.required_values if not _has_value(device, key)]
+    waiting = [key for key in rule.required_values if key in kind.wait_for and not _has_value(obj, key)]
     out.missing = waiting + [m for m in rendered.missing if m not in waiting]
     out.pattern = filter_name(rendered.pattern, filters).replace(NUMBER, '#' * rule.number_digits)
     if template.has_number:
-        out.series = series_key(out.prefix, out.suffix, rule.number_scope)
-    if template.has_number and rule.number_source == NumberSourceChoices.IP and _primary_ip(device) is None:
+        out.series = series_key(out.prefix, out.suffix, rule.number_scope, kind.key)
+    if template.has_number and rule.number_source == NumberSourceChoices.IP and _primary_ip(obj) is None:
         out.missing.append('primary IP')
     return out, template.has_number
 
@@ -135,24 +133,35 @@ def _number_of(name, prefix, suffix, scope):
     return int(match.group(1)) if match else None
 
 
+def _too_long(name, rule):
+    if len(name) <= rule.kind.max_name:
+        return None
+    return _('The name {name} is longer than {n} characters.').format(name=name, n=rule.kind.max_name)
+
+
+def _taken(rule, number, series):
+    return _('Number {number} of {series} is already used by another {kind}.').format(
+        number=rule.format_number(number), series=series, kind=rule.kind.label.lower(),
+    )
+
+
 def _finish(out, rule, number):
     out.number = number
     name = out.prefix + rule.format_number(number) + out.suffix
-    if len(name) > MAX_NAME:
-        out.error = _('The name {name} is longer than {n} characters.').format(name=name, n=MAX_NAME)
-        return out
-    out.name = name
+    out.error = _too_long(name, rule)
+    if out.error is None:
+        out.name = name
     return out
 
 
-def _pick(out, rule, device, high_water, keep_current, taken=None):
+def _pick(out, rule, obj, high_water, keep_current, taken=None):
     """Choose the number for a rendered suggestion."""
     scope = rule.number_scope
-    used = used_numbers(out.prefix, out.suffix, scope, exclude_pk=device.pk)
+    used = used_numbers(out.prefix, out.suffix, scope, rule.kind.model, exclude_pk=obj.pk)
     if taken:
         used = set(used) | taken.get(out.series, set())
     if rule.number_source == NumberSourceChoices.IP:
-        ip = _primary_ip(device)
+        ip = _primary_ip(obj)
         try:
             number = number_from_ip(rule.ip_pattern, ip.address)
         except NumberError as e:
@@ -164,18 +173,16 @@ def _pick(out, rule, device, high_water, keep_current, taken=None):
             )
             return out
         if number in used:
-            out.error = _('Number {number} of {series} is already used by another device.').format(
-                number=rule.format_number(number), series=out.prefix,
-            )
+            out.error = _taken(rule, number, out.prefix)
             return out
         return _finish(out, rule, number)
 
-    if keep_current and device.pk:
-        # Editing: a device that stays in its series keeps its number. One
+    if keep_current and obj.pk:
+        # Editing: an object that stays in its series keeps its number. One
         # whose name drifted (renamed by hand) gets back the number a rule
         # gave it, while nobody else has it.
-        earlier = AssignedName.objects.filter(device_id=device.pk).exclude(name=device.name or '')
-        for name in [device.name, *earlier.values_list('name', flat=True)]:
+        earlier = AssignedName.of(obj).exclude(name=obj.name or '')
+        for name in [obj.name, *earlier.values_list('name', flat=True)]:
             current = _number_of(name, out.prefix, out.suffix, scope)
             if (current is not None and current not in used and rule.number_first <= current <= rule.last_number
                     and not is_skipped(current, rule.skip_ranges)):
@@ -195,74 +202,72 @@ def _pick(out, rule, device, high_water, keep_current, taken=None):
     return _finish(out, rule, number)
 
 
-def suggest(device, rule=None, *, keep_current=True, taken=None):
+def suggest(obj, rule=None, *, keep_current=True, taken=None):
     """
-    The name `device` would get now. Saves and reserves nothing. `taken`
+    The name `obj` would get now. Saves and reserves nothing. `taken`
     ({series: {numbers}}) are numbers to treat as used, for suggesting names
-    for several devices at once.
+    for several objects at once.
     """
-    rule = rule or find_rule(device)
+    rule = rule or find_rule(obj)
     if rule is None:
         return Suggestion()
-    out, has_number = _render(device, rule)
+    out, has_number = _render(obj, rule)
     if out.error or out.missing:
         return out
     if not has_number:
-        out.name = out.prefix
-        if len(out.name) > MAX_NAME:
-            out.error = _('The name {name} is longer than {n} characters.').format(name=out.name, n=MAX_NAME)
-            out.name = None
+        out.error = _too_long(out.prefix, rule)
+        out.name = None if out.error else out.prefix
         return out
     high_water = NamingSeries.objects.filter(key=out.series).values_list('high_water', flat=True).first() or 0
-    return _pick(out, rule, device, high_water, keep_current, taken)
+    return _pick(out, rule, obj, high_water, keep_current, taken)
 
 
-def assign(device, rule=None):
+def assign(obj, rule=None):
     """
-    Give `device` its name for real: lock the series, pick the number again
+    Give `obj` its name for real: lock the series, pick the number again
     (someone may have taken the suggested one) and remember it as handed out.
-    Returns the Suggestion; `device.name` is set when it is ready.
+    Returns the Suggestion; `obj.name` is set when it is ready.
 
     Inside a transaction (NetBox's views, API and CSV import all save in one)
     the lock is held until that transaction ends. Outside one it covers the
     choice only.
     """
-    rule = rule or find_rule(device)
+    rule = rule or find_rule(obj)
     if rule is None:
         return Suggestion()
-    out, has_number = _render(device, rule)
+    out, has_number = _render(obj, rule)
     if out.error or out.missing:
         return out
     if not has_number:
-        out = suggest(device, rule)
+        out = suggest(obj, rule)
         if out.ready:
-            device.name = out.name
+            obj.name = out.name
         return out
     with transaction.atomic():
         NamingSeries.objects.bulk_create([NamingSeries(key=out.series)], ignore_conflicts=True)
         series = NamingSeries.objects.select_for_update().get(key=out.series)
-        out = _pick(out, rule, device, series.high_water, keep_current=False)
+        out = _pick(out, rule, obj, series.high_water, keep_current=False)
         if out.ready:
-            device.name = out.name
+            obj.name = out.name
             if out.number > series.high_water:
                 series.high_water = out.number
                 series.save(update_fields=('high_water', 'last_updated'))
     return out
 
 
-def remember(device, rule=None):
+def remember(obj, rule=None):
     """
-    A device saved with a name it was given by hand: if the name belongs to
+    An object saved with a name it was given by hand: if the name belongs to
     its rule's series, remember the number as handed out (so it does not
-    come back after the device is deleted, when gap filling is off).
+    come back after the object is deleted, when gap filling is off).
     """
-    rule = rule or find_rule(device)
+    rule = rule or find_rule(obj)
     if rule is None or rule.number_source != NumberSourceChoices.SEQUENCE:
         return
-    out, has_number = _render(device, rule)
+    out, has_number = _render(obj, rule)
     if not has_number or out.error or out.missing:
         return
-    number = _number_of(device.name, out.prefix, out.suffix, rule.number_scope)
+    number = _number_of(obj.name, out.prefix, out.suffix, rule.number_scope)
     # A number outside the rule's range was never the rule's to hand out (and
     # may not even fit the database column, as in SW99999999999).
     if number is None or not rule.number_first <= number <= rule.last_number:
@@ -271,24 +276,24 @@ def remember(device, rule=None):
     NamingSeries.objects.filter(key=out.series, high_water__lt=number).update(high_water=number)
 
 
-def follows(device, rule=None):
-    """(rule, True/False) whether the device's name fits its rule; (None, None) without a rule."""
-    rule = rule or find_rule(device)
+def follows(obj, rule=None):
+    """(rule, True/False) whether the object's name fits its rule; (None, None) without a rule."""
+    rule = rule or find_rule(obj)
     if rule is None:
         return None, None
-    out, has_number = _render(device, rule)
+    out, has_number = _render(obj, rule)
     if out.error:
         return rule, False
     if out.missing and out.missing != ['primary IP']:
         return rule, False
-    name = device.name or ''
+    name = obj.name or ''
     if not has_number:
         return rule, name.lower() == out.prefix.lower()
     number = _number_of(name, out.prefix, out.suffix, 'name')
     if number is None or len(name) - len(out.prefix) - len(out.suffix) < rule.number_digits:
         return rule, False
     if rule.number_source == NumberSourceChoices.IP:
-        ip = _primary_ip(device)
+        ip = _primary_ip(obj)
         try:
             return rule, ip is not None and number_from_ip(rule.ip_pattern, ip.address) == number
         except NumberError:
@@ -296,31 +301,29 @@ def follows(device, rule=None):
     return rule, rule.number_first <= number <= rule.last_number
 
 
-def check_typed_name(device, rule):
+def check_typed_name(obj, rule):
     """
     For rules that refuse names that don't fit: an error message for a name
     typed by hand, or None when it is fine.
     """
-    out, has_number = _render(device, rule)
+    out, has_number = _render(obj, rule)
     if out.error:
         return out.error
     if out.missing and out.missing != ['primary IP']:
         return _('The rule "{rule}" needs a value for: {missing}.').format(rule=rule, missing=', '.join(out.missing))
-    _rule, fits = follows(device, rule)
-    example = suggest(device, rule)
+    _rule, fits = follows(obj, rule)
+    example = suggest(obj, rule)
     if not fits:
         hint = _(' Leave the name empty to get {name}.').format(name=example.name) if example.ready else ''
         return _('The name does not follow the rule "{rule}".').format(rule=rule) + hint
     if has_number:
-        number = _number_of(device.name, out.prefix, out.suffix, 'name')
+        number = _number_of(obj.name, out.prefix, out.suffix, 'name')
         if is_skipped(number, rule.skip_ranges):
             return _('Number {number} is never handed out by the rule "{rule}".').format(
                 number=rule.format_number(number), rule=rule,
             )
-        if number in used_numbers(out.prefix, out.suffix, rule.number_scope, exclude_pk=device.pk):
-            return _('Number {number} of {series} is already used by another device.').format(
-                number=rule.format_number(number), series=out.prefix,
-            )
+        if number in used_numbers(out.prefix, out.suffix, rule.number_scope, rule.kind.model, exclude_pk=obj.pk):
+            return _taken(rule, number, out.prefix)
     return None
 
 
@@ -348,18 +351,18 @@ def _auto_set():
     return names
 
 
-def mark_auto(device):
-    device._naming_auto = True
-    if device.name:
-        _auto_set().add(device.name)
+def mark_auto(obj):
+    obj._naming_auto = True
+    if obj.name:
+        _auto_set().add(obj.name)
 
 
-def is_auto(device):
-    if getattr(device, '_naming_auto', False):
+def is_auto(obj):
+    if getattr(obj, '_naming_auto', False):
         return True
-    return bool(device.name) and device._state.adding and device.name in _auto_set()
+    return bool(obj.name) and obj._state.adding and obj.name in _auto_set()
 
 
-def unmark_auto(device):
-    device._naming_auto = False
-    _auto_set().discard(device.name)
+def unmark_auto(obj):
+    obj._naming_auto = False
+    _auto_set().discard(obj.name)

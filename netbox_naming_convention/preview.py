@@ -3,7 +3,7 @@ The preview on the rule form: the names a rule would give, while it is
 being written. Nothing is saved or reserved.
 
 The preview builds the rule as the form has it (`rule_draft()`) and runs
-the same code as everything else (matching.rule_devices(), naming.suggest()).
+the same code as everything else (matching.rule_objects(), naming.suggest()).
 The draft is an unsaved NamingRule whose many-to-many conditions are put in
 Django's prefetch cache, so `rule.roles.all()` and friends answer from the
 form instead of the database.
@@ -12,12 +12,10 @@ import re
 
 from django.utils.translation import gettext as _
 
-from dcim.models import Device
-
-from .matching import find_rule, rule_devices, rule_matches, rules_queryset
+from .matching import find_rule, rule_matches, rule_objects, rules_queryset
 from .naming import _render, suggest
 
-#: Devices of the rule shown in the preview.
+#: Objects of the rule shown in the preview.
 PREVIEW_LIMIT = 10
 
 #: Fields of the rule form whose errors make the preview pointless.
@@ -37,6 +35,7 @@ def rule_draft(form):
     cache = {}
     for name in rule.CONDITION_FIELDS:
         model = rule._meta.get_field(name).related_model
+        # Conditions the object type has no use for are not on the form.
         values = form.cleaned_data.get(name) or []
         queryset = model.objects.filter(pk__in=[value.pk for value in values])
         list(queryset)  # fills the queryset's cache, so .all() and .exists() don't query again
@@ -50,55 +49,65 @@ def pattern_parts(pattern):
     return [(piece, bool(i % 2)) for i, piece in enumerate(re.split(r'<([^<>]+)>', pattern)) if piece]
 
 
-def _row(device, hint):
+def _row(obj, hint):
     if hint.error:
         note = hint.error
     elif hint.missing:
         note = _('Waiting for: {missing}').format(missing=', '.join(hint.missing))
-    elif hint.name == device.name:
+    elif hint.name == obj.name:
         note = _('Unchanged')
     else:
         note = ''
-    return {'device': device, 'name': hint.name if hint.ready else None, 'note': note}
+    return {'object': obj, 'name': hint.name if hint.ready else None, 'note': note}
 
 
-def _tried(device, rule):
-    """The preview for the device picked on the form: its name, and whether this rule names it."""
-    if not rule_matches(rule, device):
-        why = _('This device doesn\'t match the rule\'s conditions; this is the name the template gives it.')
+def _tried(obj, rule):
+    """The preview for the object picked on the form: its name, and whether this rule names it."""
+    kind = rule.kind.label.lower()
+    if not rule_matches(rule, obj):
+        why = _('This {kind} doesn\'t match the rule\'s conditions; this is the name the template gives it.').format(
+            kind=kind,
+        )
     else:
-        rules = [r for r in rules_queryset() if r.pk != rule.pk] + [rule]
-        first = find_rule(device, rules)
+        rules = [r for r in rules_queryset(rule.kind) if r.pk != rule.pk] + [rule]
+        first = find_rule(obj, rules)
         if first is rule:
             why = None
         else:
-            why = _('The rule "{rule}" names this device first.').format(rule=first)
-    return {**_row(device, suggest(device, rule)), 'why': why}
+            why = _('The rule "{rule}" names this {kind} first.').format(rule=first, kind=kind)
+    return {**_row(obj, suggest(obj, rule)), 'why': why}
 
 
-def preview(form, user, device=None):
-    """What the preview card shows for the rule form `form` (already validated)."""
+def preview(form, user, obj=None):
+    """
+    What the preview card shows for the rule form `form` (already
+    validated). `obj` is the object picked in "Try on", of the rule's kind.
+    """
     if not form.data.get('template'):
         return {'errors': [_('Type a template to see the names it gives.')]}
     errors = [error for name in NAME_FIELDS for error in form.errors.get(name, [])]
     if errors:
         return {'errors': errors}
     rule = rule_draft(form)
-    out, _has_number = _render(device or Device(), rule)
+    model = rule.kind.model
+    out, _has_number = _render(obj or model(), rule)
     if out.error:
         return {'errors': [out.error]}
-    visible = Device.objects.restrict(user, 'view')
-    devices = rule_devices(rule, limit=PREVIEW_LIMIT, devices=visible)
+    visible = model.objects.restrict(user, 'view')
+    objs = rule_objects(rule, limit=PREVIEW_LIMIT, objects=visible)
     taken, rows = {}, []
-    for each in devices:
+    for each in objs:
         hint = suggest(each, rule, taken=taken)
         if hint.ready and hint.number is not None:
             taken.setdefault(hint.series, set()).add(hint.number)
         rows.append(_row(each, hint))
     return {
         'pattern': pattern_parts(out.pattern),
-        'tried': _tried(device, rule) if device is not None else None,
+        'tried': _tried(obj, rule) if obj is not None else None,
         'rows': rows,
-        'more': len(devices) >= PREVIEW_LIMIT,
-        'has_kind': bool(form.cleaned_data.get('roles') or form.cleaned_data.get('device_types')),
+        'more': len(objs) >= PREVIEW_LIMIT,
+        'kind': rule.kind,
+        'needs_kind': bool(rule.kind.required_conditions) and not any(
+            form.cleaned_data.get(name) for name in rule.kind.required_conditions
+        ),
     }

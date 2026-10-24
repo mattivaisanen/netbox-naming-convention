@@ -1,18 +1,20 @@
 """
-Device save hooks.
+Save hooks for the objects rules name (devices, virtual machines, racks;
+see kinds.py). "Device" below stands for any of them.
 
 - post_clean (NetBox sends it from every model's clean(), so it runs for the
   web UI, CSV import and the REST API's validation): a new device without a
   name gets the rule's suggestion, so NetBox's own checks (unique names per
   site) see it; a name typed by hand is checked when the rule refuses names
-  that don't fit.
+  that don't fit. Virtual machines and racks must have a name, so a rule
+  that can't name one yet is a validation error.
 - pre_save: the number is picked again under the series lock, inside the
   save's transaction, and remembered as handed out. Also catches code that
   saves without validating (scripts, NetBox setting a primary IP), so a
   device without a name is named as soon as its rule has what it needs.
   The change log entry's message says the name came from the rule.
 - post_save: remembers which names a rule gave (AssignedName), for the
-  device page and change requests.
+  device page and change requests. post_delete forgets them.
 
 A device that has a name is never renamed here: renaming is always a person's
 edit (the device form's "Suggest again" button).
@@ -20,25 +22,24 @@ edit (the device form's "Suggest again" button).
 import logging
 
 from django.core.exceptions import ValidationError
-from django.db.models.signals import post_save, pre_save
-from django.dispatch import receiver
+from django.db.models.signals import post_delete, post_save, pre_save
 
-from dcim.models import Device
 from netbox.context import current_request
 from netbox.signals import post_clean
 from utilities.exceptions import AbortRequest
 
 from . import naming
+from .kinds import KINDS
 from .matching import find_rule
 from .models import AssignedHowChoices, AssignedName, EnforcementChoices
 
 logger = logging.getLogger('netbox_naming_convention')
 
 
-def _stored_name(device):
-    if device._state.adding or not device.pk:
+def _stored_name(obj):
+    if obj._state.adding or not obj.pk:
         return None
-    return Device.objects.filter(pk=device.pk).values_list('name', flat=True).first()
+    return type(obj).objects.filter(pk=obj.pk).values_list('name', flat=True).first()
 
 
 def _form_value(key):
@@ -84,7 +85,6 @@ def _accepted_suggestion(instance, rule):
         instance._naming_suggested_by = rule
 
 
-@receiver(post_clean, sender=Device)
 def name_on_clean(sender, instance, **kwargs):
     if getattr(instance, '_naming_skip', False):
         return
@@ -100,7 +100,9 @@ def name_on_clean(sender, instance, **kwargs):
         if suggestion.ready:
             instance.name = suggestion.name
             naming.mark_auto(instance)
-        elif rule.enforcement == EnforcementChoices.REFUSE and suggestion.missing != ['primary IP']:
+        elif rule.kind.name_required or (
+            rule.enforcement == EnforcementChoices.REFUSE and suggestion.missing != ['primary IP']
+        ):
             raise ValidationError({'name': _waiting(rule, suggestion)})
         return
     if naming.is_auto(instance):
@@ -115,10 +117,10 @@ def name_on_clean(sender, instance, **kwargs):
 
 
 def _waiting(rule, suggestion):
-    return f'The rule "{rule}" names this device once it has: {", ".join(suggestion.missing)}.'
+    kind = rule.kind.label.lower()
+    return f'The rule "{rule}" names this {kind} once it has: {", ".join(suggestion.missing)}.'
 
 
-@receiver(pre_save, sender=Device)
 def name_on_save(sender, instance, raw=False, **kwargs):
     if raw or getattr(instance, '_naming_skip', False):
         return
@@ -148,21 +150,38 @@ def name_on_save(sender, instance, raw=False, **kwargs):
         # A device saved without a name, often without validating (NetBox
         # setting a primary IP): it stays unnamed, as NetBox would leave it.
         if suggestion.error:
-            logger.warning('Device %s not named by rule "%s": %s', instance.pk or '(new)', rule, suggestion.error)
+            logger.warning(
+                '%s %s not named by rule "%s": %s', rule.kind.label, instance.pk or '(new)', rule, suggestion.error,
+            )
         return
     if provisional and provisional != instance.name:
-        logger.info('Device named %s instead of %s: the number was taken meanwhile.', instance.name, provisional)
+        logger.info('%s named %s instead of %s: the number was taken meanwhile.', rule.kind.label, instance.name,
+                    provisional)
     instance._naming_assigned = rule
     _add_changelog_message(instance, _message(rule, AssignedHowChoices.AUTO))
 
 
-@receiver(post_save, sender=Device)
 def record_on_save(sender, instance, raw=False, **kwargs):
     rule = getattr(instance, '_naming_assigned', None)
     if rule is None or raw:
         return
     instance._naming_assigned = None
     AssignedName.record(instance, instance.name, rule, AssignedHowChoices.AUTO)
+
+
+def forget_on_delete(sender, instance, **kwargs):
+    AssignedName.of(instance).delete()
+
+
+def connect():
+    """Hook the save signals of every kind's model (called from the app's ready())."""
+    for kind in KINDS.values():
+        model = kind.model
+        uid = f'netbox_naming_convention.{kind.key}'
+        post_clean.connect(name_on_clean, sender=model, dispatch_uid=f'{uid}.clean')
+        pre_save.connect(name_on_save, sender=model, dispatch_uid=f'{uid}.pre_save')
+        post_save.connect(record_on_save, sender=model, dispatch_uid=f'{uid}.post_save')
+        post_delete.connect(forget_on_delete, sender=model, dispatch_uid=f'{uid}.post_delete')
 
 
 def _message(rule, how):

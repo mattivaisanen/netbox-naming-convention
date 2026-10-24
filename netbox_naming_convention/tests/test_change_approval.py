@@ -47,7 +47,7 @@ class ChangeApprovalTests(NetBoxData, TestCase):
         device = Device.objects.get()
         self.assertEqual(device.name, 'FITASWI001_JK8')
         self.assertTrue(ChangeRequest.objects.filter(object_id=device.pk, action='create', status='pending').exists())
-        self.assertEqual(NamingSeries.objects.get(key='fitaswi').high_water, 1)
+        self.assertEqual(NamingSeries.objects.get(key='device:fitaswi').high_water, 1)
         change = ChangeRequest.objects.get(object_id=device.pk, action='create')
         page = self.client.get(change.get_absolute_url())
         self.assertContains(page, 'was filled in by the naming rule "Tampere switches"')

@@ -1,10 +1,14 @@
 {% load i18n %}
-{# Device add/edit form helper. See DEVELOPER.md "The device form". #}
+{# Device, virtual machine and rack add/edit form helper. See DEVELOPER.md "The name field". #}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   'use strict';
   var MODE = '{{ naming_mode|escapejs }}';
-  var DEVICE = '{{ naming_device|escapejs }}';
+  var TYPE = '{{ naming_type|escapejs }}';
+  var OBJECT = '{{ naming_object|escapejs }}';
+  // The form's fields the name can depend on, and those a rule needs to match at all.
+  var FIELDS = JSON.parse('{{ naming_fields_json|escapejs }}');
+  var KIND_FIELDS = JSON.parse('{{ naming_kind_fields_json|escapejs }}');
   var URL = '{{ naming_url|escapejs }}';
   var LOCKED = '{{ naming_locked|escapejs }}' === 'yes';
   var TEXT = {
@@ -83,9 +87,6 @@ document.addEventListener('DOMContentLoaded', function () {
     return [TEXT.suggested, el('span', 'font-monospace', last.name)];
   }
 
-  var FIELDS = ['site', 'location', 'rack', 'role', 'device_type', 'tenant', 'platform', 'status', 'serial',
-                'asset_tag', 'primary_ip4', 'primary_ip6'];
-
   var input = document.getElementById('id_name');
   if (!input || !input.form) { return; }
   var form = input.form;
@@ -121,7 +122,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // its rule (the server says so).
   var locked = MODE === 'add' ? !input.value : LOCKED;
   var keep = input.value;  // edit: the name a re-lock goes back to
-  var original = input.value;  // edit: the name the device has
+  var original = input.value;  // edit: the name the object has
   var last = null;
   var lastSent = null;
   var first = true;
@@ -129,7 +130,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function values() {
     var data = new FormData(form);
-    var out = {};
+    var out = {object_type: TYPE};
     FIELDS.forEach(function (key) {
       var value = data.get(key);
       if (value !== null && value !== '') { out[key] = value; }
@@ -140,9 +141,9 @@ document.addEventListener('DOMContentLoaded', function () {
       if (key.indexOf('cf_') === 0 && value !== '') { cf[key.slice(3)] = value; }
     });
     out.custom_fields = cf;
-    // Edit: suggest from the name the device has, not from what is typed, so
-    // a device that stays in its series keeps its number.
-    if (DEVICE) { out.device = Number(DEVICE); out.name = original; }
+    // Edit: suggest from the name the object has, not from what is typed, so
+    // an object that stays in its series keeps its number.
+    if (OBJECT) { out.id = Number(OBJECT); out.name = original; }
     return out;
   }
 
@@ -183,7 +184,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function kindsSet() {
     var data = new FormData(form);
-    return !!data.get('role') && !!data.get('device_type');
+    return KIND_FIELDS.every(function (key) { return !!data.get(key); });
   }
 
   function showAdd() {
@@ -198,7 +199,7 @@ document.addEventListener('DOMContentLoaded', function () {
         setIcon('mdi-pencil', TEXT.edit);
         return;
       }
-      // No rule for this device: the name field as NetBox has it.
+      // No rule for this object: the name field as NetBox has it.
       if (locked) { input.value = ''; }
       lock(false);
       input.placeholder = '';

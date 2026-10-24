@@ -3,8 +3,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from dcim.choices import DeviceStatusChoices
-from dcim.models import Device, DeviceRole, DeviceType, Location, Platform, Region, Site, SiteGroup
+from dcim.models import DeviceRole, DeviceType, Location, Platform, RackRole, RackType, Region, Site, SiteGroup
 from extras.models import Tag
 from netbox.forms import NetBoxModelFilterSetForm, NetBoxModelForm
 from tenancy.models import Tenant
@@ -14,17 +13,19 @@ from utilities.forms.fields import (
 from utilities.forms.rendering import FieldSet
 from utilities.forms.utils import get_field_value
 from utilities.forms.widgets import APISelect, HTMXSelect
+from virtualization.models import Cluster, VirtualMachineType
 
-from .models import EnforcementChoices, NamingRule, NumberSourceChoices, RequiredValueChoices
+from .kinds import DEVICE, KINDS
+from .models import EnforcementChoices, NamingRule, NumberSourceChoices, ObjectTypeChoices, RequiredValueChoices
 
 
-class PreviewDeviceSelect(APISelect):
+class PreviewObjectSelect(APISelect):
     """
-    The device picker of the rule form's preview, with the preview below it:
+    The object picker of the rule form's preview, with the preview below it:
     the template posts the whole form to the preview view whenever it
     changes (see preview.py).
     """
-    template_name = 'netbox_naming_convention/inc/preview_device.html'
+    template_name = 'netbox_naming_convention/inc/preview_object.html'
     preview_url = ''
 
     def get_context(self, name, value, attrs):
@@ -33,96 +34,144 @@ class PreviewDeviceSelect(APISelect):
         return context
 
 
+def _many(label, model):
+    return DynamicModelMultipleChoiceField(label=label, queryset=model.objects.all(), required=False)
+
+
 class NamingRuleForm(NetBoxModelForm):
-    roles = DynamicModelMultipleChoiceField(label=_('Roles'), queryset=DeviceRole.objects.all(), required=False)
-    device_types = DynamicModelMultipleChoiceField(
-        label=_('Device types'), queryset=DeviceType.objects.all(), required=False,
-    )
-    regions = DynamicModelMultipleChoiceField(label=_('Regions'), queryset=Region.objects.all(), required=False)
-    site_groups = DynamicModelMultipleChoiceField(
-        label=_('Site groups'), queryset=SiteGroup.objects.all(), required=False,
-    )
-    sites = DynamicModelMultipleChoiceField(label=_('Sites'), queryset=Site.objects.all(), required=False)
-    locations = DynamicModelMultipleChoiceField(
-        label=_('Locations'), queryset=Location.objects.all(), required=False,
-    )
-    tenants = DynamicModelMultipleChoiceField(label=_('Tenants'), queryset=Tenant.objects.all(), required=False)
-    platforms = DynamicModelMultipleChoiceField(
-        label=_('Platforms'), queryset=Platform.objects.all(), required=False,
-    )
-    statuses = forms.MultipleChoiceField(label=_('Statuses'), choices=DeviceStatusChoices, required=False)
+    """
+    The rule form. The object type and the number source are HTMXSelects:
+    changing them draws the form again with only the fields that apply
+    (like NetBox's rack form does for rack types).
+    """
+    roles = _many(_('Roles'), DeviceRole)
+    device_types = _many(_('Device types'), DeviceType)
+    vm_types = _many(_('Virtual machine types'), VirtualMachineType)
+    clusters = _many(_('Clusters'), Cluster)
+    rack_roles = _many(_('Rack roles'), RackRole)
+    rack_types = _many(_('Rack types'), RackType)
+    regions = _many(_('Regions'), Region)
+    site_groups = _many(_('Site groups'), SiteGroup)
+    sites = _many(_('Sites'), Site)
+    locations = _many(_('Locations'), Location)
+    tenants = _many(_('Tenants'), Tenant)
+    platforms = _many(_('Platforms'), Platform)
+    statuses = forms.MultipleChoiceField(label=_('Statuses'), required=False)
     required_values = forms.MultipleChoiceField(
-        label=_('Wait for'), choices=RequiredValueChoices, required=False,
-        help_text=NamingRule._meta.get_field('required_values').help_text,
+        label=_('Wait for'), required=False, help_text=NamingRule._meta.get_field('required_values').help_text,
     )
     match_tags = DynamicModelMultipleChoiceField(
-        label=_('Device tags'), queryset=Tag.objects.all(), required=False,
-        help_text=_('Tags the device must have.'),
+        label=_('Tags'), queryset=Tag.objects.all(), required=False, help_text=_('Tags the object must have.'),
     )
     constraint = JSONField(label=_('Advanced condition'), required=False)
     comments = CommentField()
-    # Not saved: only for the preview.
-    preview_device = DynamicModelChoiceField(
-        label=_('Try on device'), queryset=Device.objects.all(), required=False, widget=PreviewDeviceSelect,
-    )
-
-    fieldsets = (
-        FieldSet('name', 'description', 'enabled', 'priority', 'tags', name=_('Rule')),
-        FieldSet('roles', 'device_types', name=_('Kind of device (one of these is required)')),
-        FieldSet(
-            'regions', 'site_groups', 'sites', 'locations', 'tenants', 'platforms', 'statuses', 'match_tags',
-            'tag_match', 'constraint', name=_('Other conditions (optional)'),
-        ),
-        FieldSet('template', 'name_filters', 'required_values', name=_('Name')),
-        FieldSet('preview_device', name=_('Preview')),
-        FieldSet(
-            'number_source', 'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps',
-            'number_scope', 'ip_pattern', name=_('Number'),
-        ),
-        FieldSet('enforcement', name=_('Enforcement')),
+    # Not saved: only for the preview. Its queryset follows the object type.
+    preview_object = DynamicModelChoiceField(
+        label=_('Try on'), queryset=DEVICE.model.objects.all(), required=False, widget=PreviewObjectSelect,
     )
 
     class Meta:
         model = NamingRule
         fields = (
-            'name', 'description', 'enabled', 'priority', 'roles', 'device_types', 'regions', 'site_groups',
-            'sites', 'locations', 'tenants', 'platforms', 'statuses', 'match_tags', 'tag_match', 'constraint',
-            'template', 'name_filters', 'required_values', 'number_source', 'ip_pattern', 'number_digits',
-            'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'enforcement', 'comments',
-            'tags',
+            'name', 'description', 'enabled', 'priority', 'object_type', *NamingRule.CONDITION_FIELDS, 'statuses',
+            'tag_match', 'constraint', 'template', 'name_filters', 'required_values', 'number_source', 'ip_pattern',
+            'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope',
+            'enforcement', 'comments', 'tags',
         )
         widgets = {
             'template': forms.TextInput(attrs={'class': 'font-monospace'}),
             'name_filters': forms.TextInput(attrs={'class': 'font-monospace'}),
-            # Changing the source draws the form again with its own fields.
+            'object_type': HTMXSelect(),
             'number_source': HTMXSelect(),
         }
 
     #: Fields that mean nothing for the other number source.
     SEQUENCE_ONLY = ('number_first', 'number_last', 'skip_numbers', 'fill_gaps')
     IP_ONLY = ('ip_pattern',)
+    #: Conditions every kind has besides its own (Kind.conditions).
+    SHARED_CONDITIONS = ('statuses', 'match_tags', 'tag_match', 'constraint')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        kind = KINDS.get(get_field_value(self, 'object_type')) or DEVICE
+        self.kind = kind
+        # Left out (older scripts, the API's forms): a device rule.
+        self.fields['object_type'].required = False
+        self._fit_conditions(kind)
+        self._fit_number(kind)
         self.fields['template'].help_text = format_html(
             '{} <a href="{}" target="_blank">{}</a>',
             self.fields['template'].help_text,
-            reverse('plugins:netbox_naming_convention:reference'),
+            reverse('plugins:netbox_naming_convention:reference') + f'?object_type={kind.key}',
             _('All values and filters'),
         )
+        preview = self.fields['preview_object']
+        preview.queryset = kind.model.objects.all()
+        preview.label = _('Try on {kind}').format(kind=kind.label.lower())
         url = reverse('plugins:netbox_naming_convention:namingrule_preview')
-        self.fields['preview_device'].widget.preview_url = f'{url}?rule={self.instance.pk}' if self.instance.pk else url
+        preview.widget.preview_url = f'{url}?rule={self.instance.pk}' if self.instance.pk else url
+
+        own = [c.field for c in kind.conditions]
+        required = [name for name in own if name in kind.required_conditions]
+        if required:
+            kind_fieldset = FieldSet(*required, name=_('Kind of device (one of these is required)'))
+        else:
+            kind_fieldset = None
+        number = [name for name in (
+            'number_source', 'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps',
+            'number_scope', 'ip_pattern',
+        ) if name in self.fields]
+        self.fieldsets = tuple(fieldset for fieldset in (
+            FieldSet('name', 'description', 'enabled', 'priority', 'object_type', 'tags', name=_('Rule')),
+            kind_fieldset,
+            FieldSet(
+                *[name for name in own if name not in required], *self.SHARED_CONDITIONS,
+                name=_('Other conditions (optional)') if required else _('Conditions (optional)'),
+            ),
+            FieldSet('template', 'name_filters', 'required_values', name=_('Name')),
+            FieldSet('preview_object', name=_('Preview')),
+            FieldSet(*number, name=_('Number')),
+            FieldSet('enforcement', name=_('Enforcement')),
+        ) if fieldset is not None)
+
+    def _fit_conditions(self, kind):
+        """Only the conditions, statuses and waits the object type has."""
+        for name in NamingRule.CONDITION_FIELDS:
+            if name not in kind.condition_fields:
+                del self.fields[name]
+        self.fields['statuses'].choices = kind.statuses.CHOICES
+        waits = dict(RequiredValueChoices.CHOICES)
+        self.fields['required_values'].choices = [(key, waits[key]) for key in kind.wait_for]
+        if not self.is_bound:
+            current = self.initial.get('required_values', self.instance.required_values) or []
+            if isinstance(current, str):
+                current = [current]
+            if self.instance.pk is None and list(current) == list(DEVICE.default_wait_for):
+                # A new rule starts with its own kind's defaults.
+                current = kind.default_wait_for
+            self.initial['required_values'] = [key for key in current if key in kind.wait_for]
+
+    def _fit_number(self, kind):
+        """Only the number fields of the chosen source; no IP source for objects without a primary IP."""
+        if not kind.has_primary_ip:
+            self.fields['number_source'].choices = [
+                choice for choice in self.fields['number_source'].choices if choice[0] != NumberSourceChoices.IP
+            ]
         source = get_field_value(self, 'number_source') or NumberSourceChoices.SEQUENCE
+        if not kind.has_primary_ip:
+            source = NumberSourceChoices.SEQUENCE
         for name in self.IP_ONLY if source == NumberSourceChoices.SEQUENCE else self.SEQUENCE_ONLY:
             del self.fields[name]
+
+    def clean_object_type(self):
+        return self.cleaned_data.get('object_type') or DEVICE.key
 
     def clean(self):
         super().clean()
         data = self.cleaned_data
-        if not data.get('roles') and not data.get('device_types'):
-            raise forms.ValidationError({
-                'roles': _('A rule needs at least one role or device type.'),
-            })
+        values = {name: data.get(name) for name in NamingRule.CONDITION_FIELDS if name in self.fields}
+        for name, error in self.kind.condition_errors(values).items():
+            self.add_error(name, error)
         return data
 
 
@@ -130,13 +179,14 @@ class NamingRuleFilterForm(NetBoxModelFilterSetForm):
     model = NamingRule
     fieldsets = (
         FieldSet('q', 'filter_id', 'tag'),
-        FieldSet('enabled', 'role_id', 'device_type_id', 'site_id', 'number_source', 'enforcement',
+        FieldSet('enabled', 'object_type', 'role_id', 'device_type_id', 'site_id', 'number_source', 'enforcement',
                  name=_('Rule')),
     )
     enabled = forms.NullBooleanField(
         required=False, label=_('Enabled'),
         widget=forms.Select(choices=((None, '---------'), (True, _('Yes')), (False, _('No')))),
     )
+    object_type = forms.MultipleChoiceField(choices=ObjectTypeChoices, required=False, label=_('Names'))
     role_id = DynamicModelMultipleChoiceField(queryset=DeviceRole.objects.all(), required=False, label=_('Role'))
     device_type_id = DynamicModelMultipleChoiceField(
         queryset=DeviceType.objects.all(), required=False, label=_('Device type'),
