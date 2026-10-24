@@ -265,11 +265,14 @@ def _expand_tree(model, pks):
     return out
 
 
-def rule_devices(rule, limit=None):
+def rule_devices(rule, limit=None, devices=None):
     """
     Devices this rule names: those it matches and no rule before it does.
     The database narrows them down by the simple conditions; the rest
     (tags "all", advanced condition, priority) is checked per device.
+    `rule` may be an unsaved draft (preview.py); it takes the place of its
+    saved version when rules are compared. `devices` narrows the devices
+    looked at (by default all).
     """
     from dcim.models import Device, DeviceRole, Location, Region
 
@@ -277,7 +280,8 @@ def rule_devices(rule, limit=None):
     types = {t.pk for t in rule.device_types.all()}
     if not roles and not types:
         return []
-    devices = Device.objects.all()
+    if devices is None:
+        devices = Device.objects.all()
     if roles:
         devices = devices.filter(role_id__in=roles)
     if types:
@@ -300,14 +304,14 @@ def rule_devices(rule, limit=None):
         'site', 'site__region', 'site__group', 'location', 'rack', 'role', 'device_type',
         'device_type__manufacturer', 'tenant', 'platform', 'primary_ip4', 'primary_ip6',
     ).prefetch_related('tags').order_by('name', 'pk')
-    rules = ordered_rules()
+    rules = ordered_rules([r for r in rules_queryset() if r.pk != rule.pk] + [rule])
     out = []
     for device in devices.iterator(chunk_size=500):
         slugs = {t.slug for t in device.tags.all()}
         if not rule_matches(rule, device, tag_slugs=slugs):
             continue
         first = next((r for r in rules if rule_matches(r, device, tag_slugs=slugs)), None)
-        if first is not None and first.pk != rule.pk:
+        if first is not rule:
             continue
         out.append(device)
         if limit and len(out) >= limit:

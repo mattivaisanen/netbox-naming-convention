@@ -230,3 +230,29 @@ class ViewTests(NetBoxData, TestCase):
         two.refresh_from_db()
         self.assertEqual((one.name, two.name), ('FITASWI001_JK8', 'FITASWI002_JK9'))
         self.assertEqual(AssignedName.objects.get(device=one).how, 'suggested')
+
+    def test_rule_preview(self):
+        named = self.device(rack=self.jk8)
+        Device.objects.create(name='old-switch', site=self.tampere, role=self.access, device_type=self.c9300,
+                              rack=self.jk9)
+        self.assertContains(self.client.get(reverse(URL + 'namingrule_add')), 'id="naming-preview"')
+        url = reverse(URL + 'namingrule_preview')
+        form = {
+            'name': 'Tampere switches', 'priority': 100, 'roles': [self.switch.pk], 'sites': [self.tampere.pk],
+            'number_source': 'sequence', 'number_digits': 3, 'number_first': 1, 'number_scope': 'shared',
+            'enforcement': 'warn', 'tag_match': 'all', 'required_values': ['site', 'role', 'device_type'],
+        }
+        # Editing a rule: its devices with the names the new template gives them.
+        page = self.client.post(f'{url}?rule={self.switches.pk}', {**form, 'template': 'SW-{rack.name}-{n}'})
+        self.assertEqual([row['name'] for row in page.context['rows']], ['SW-JK8-001', 'SW-JK9-001'])
+        self.assertEqual(page.context['rows'][0]['device'], named)
+        self.assertEqual(self.switches.template, NamingRule.objects.get(pk=self.switches.pk).template)
+        # A new rule, tried on a device of another rule.
+        page = self.client.post(url, {
+            **form, 'name': 'New', 'priority': 200, 'template': 'X{n}', 'preview_device': named.pk,
+        })
+        self.assertEqual(page.context['tried']['name'], 'X001')
+        self.assertContains(page, 'names this device first')
+        # A broken template only shows the error.
+        page = self.client.post(url, {**form, 'template': 'SW{nope}'})
+        self.assertTrue(page.context['errors'])

@@ -47,6 +47,8 @@ where 014 is the next free number of the series `AMS1-SW`.
 - **Enforcement per rule:** off (only suggest and fill in), warn (names that
   don't fit are flagged on the device and listed on the rule), or refuse (a
   new device or a rename must follow the rule, and may not reuse a number).
+- **Preview while you write a rule.** The rule form shows the names the
+  rule would give its devices, and to any device you pick, as you type.
 - **Rule pages** show each series with its highest number and the next name,
   and the devices that don't follow the rule with the name they would get.
   Tick some of them and *Rename selected to the suggested names* shows old
@@ -125,9 +127,20 @@ name. Set different priorities when you want a fixed order.
 | Number scope | *Shared*: the number counts per text before it, so racks share one run (`AMS1-SW014-R01`, `AMS1-SW015-R02`). *Whole name*: each full name counts on its own (`AMS1-SW001-R01`, `AMS1-SW001-R02`). |
 | IP pattern | *From primary IP* only: a mask such as `*.*.*.N` (the octet marked N is the number) or a regular expression with one group, such as `\.([0-9]+)$`. |
 
+| Enforcement | *Off*, *Warn* (default) or *Refuse*, see above. |
+
 The rule form shows only the number fields that apply to the number source
 you pick.
-| Enforcement | *Off*, *Warn* (default) or *Refuse*, see above. |
+
+### Preview
+
+Under the template, the rule form shows what names look like
+(`AMS1-SW###-[rack]`) and the names the rule would give the first ten of
+its devices, and updates as you type. Pick a device in *Try on device* to
+see the name it would get; the preview also says when the device doesn't
+match the rule's conditions or another rule names it first. Nothing is
+saved, reserved or renamed: the preview only shows the rule as the form has
+it, before you save.
 
 ### Templates
 

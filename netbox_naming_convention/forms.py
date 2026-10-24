@@ -4,18 +4,33 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from dcim.choices import DeviceStatusChoices
-from dcim.models import DeviceRole, DeviceType, Location, Platform, Region, Site, SiteGroup
+from dcim.models import Device, DeviceRole, DeviceType, Location, Platform, Region, Site, SiteGroup
 from extras.models import Tag
 from netbox.forms import NetBoxModelFilterSetForm, NetBoxModelForm
 from tenancy.models import Tenant
 from utilities.forms.fields import (
-    CommentField, DynamicModelMultipleChoiceField, JSONField, TagFilterField,
+    CommentField, DynamicModelChoiceField, DynamicModelMultipleChoiceField, JSONField, TagFilterField,
 )
 from utilities.forms.rendering import FieldSet
 from utilities.forms.utils import get_field_value
-from utilities.forms.widgets import HTMXSelect
+from utilities.forms.widgets import APISelect, HTMXSelect
 
 from .models import EnforcementChoices, NamingRule, NumberSourceChoices, RequiredValueChoices
+
+
+class PreviewDeviceSelect(APISelect):
+    """
+    The device picker of the rule form's preview, with the preview below it:
+    the template posts the whole form to the preview view whenever it
+    changes (see preview.py).
+    """
+    template_name = 'netbox_naming_convention/inc/preview_device.html'
+    preview_url = ''
+
+    def get_context(self, name, value, attrs):
+        context = super().get_context(name, value, attrs)
+        context['preview_url'] = self.preview_url
+        return context
 
 
 class NamingRuleForm(NetBoxModelForm):
@@ -46,6 +61,10 @@ class NamingRuleForm(NetBoxModelForm):
     )
     constraint = JSONField(label=_('Advanced condition'), required=False)
     comments = CommentField()
+    # Not saved: only for the preview.
+    preview_device = DynamicModelChoiceField(
+        label=_('Try on device'), queryset=Device.objects.all(), required=False, widget=PreviewDeviceSelect,
+    )
 
     fieldsets = (
         FieldSet('name', 'description', 'enabled', 'priority', 'tags', name=_('Rule')),
@@ -55,6 +74,7 @@ class NamingRuleForm(NetBoxModelForm):
             'tag_match', 'constraint', name=_('Other conditions (optional)'),
         ),
         FieldSet('template', 'name_filters', 'required_values', name=_('Name')),
+        FieldSet('preview_device', name=_('Preview')),
         FieldSet(
             'number_source', 'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps',
             'number_scope', 'ip_pattern', name=_('Number'),
@@ -90,6 +110,8 @@ class NamingRuleForm(NetBoxModelForm):
             reverse('plugins:netbox_naming_convention:reference'),
             _('All values and filters'),
         )
+        url = reverse('plugins:netbox_naming_convention:namingrule_preview')
+        self.fields['preview_device'].widget.preview_url = f'{url}?rule={self.instance.pk}' if self.instance.pk else url
         source = get_field_value(self, 'number_source') or NumberSourceChoices.SEQUENCE
         for name in self.IP_ONLY if source == NumberSourceChoices.SEQUENCE else self.SEQUENCE_ONLY:
             del self.fields[name]

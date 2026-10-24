@@ -3,6 +3,7 @@ import io
 from collections import OrderedDict
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -12,7 +13,7 @@ from dcim.models import Device
 from netbox.views import generic
 from utilities.views import register_model_view
 
-from . import filtersets, forms, reference, tables
+from . import filtersets, forms, preview, reference, tables
 from .matching import find_rule, rule_devices
 from .models import NamingRule, NamingSeries
 from .naming import _number_of, _render, follows, suggest
@@ -96,6 +97,27 @@ class NamingRuleBulkDeleteView(generic.BulkDeleteView):
     filterset = filtersets.NamingRuleFilterSet
     table = tables.NamingRuleTable
 
+
+@register_model_view(NamingRule, 'preview', path='preview', detail=False)
+class NamingRulePreviewView(LoginRequiredMixin, View):
+    """
+    The rule form posts itself here whenever it changes; the answer is the
+    preview below *Try on device* (see preview.py). Saves nothing.
+    """
+    def post(self, request):
+        user = request.user
+        rule = None
+        if request.GET.get('rule', '').isdigit():
+            rule = get_object_or_404(NamingRule.objects.restrict(user, 'change'), pk=request.GET['rule'])
+        elif not user.has_perm('netbox_naming_convention.add_namingrule'):
+            raise PermissionDenied
+        form = forms.NamingRuleForm(data=request.POST, instance=rule)
+        form.is_valid()
+        device = form.cleaned_data.get('preview_device')
+        if device is not None and not Device.objects.restrict(user, 'view').filter(pk=device.pk).exists():
+            device = None
+        context = preview.preview(form, user, device)
+        return render(request, 'netbox_naming_convention/inc/rule_preview.html', context)
 
 
 class TemplateReferenceView(LoginRequiredMixin, View):

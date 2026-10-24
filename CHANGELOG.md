@@ -4,6 +4,10 @@
 
 New:
 
+- The rule form previews the rule as you type: what names look like, the
+  names it would give the first ten of its devices, and the name a device
+  you pick would get (and whether another rule names it first). Nothing is
+  saved.
 - *Wait for* per rule: the fields that must be set before the name is
   filled in. New rules wait for site, device role and device type.
 - The hint under the device name is on separate lines: the rule, what

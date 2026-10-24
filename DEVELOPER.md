@@ -15,6 +15,7 @@ How the plugin works and why, for anyone changing it.
 | `template_content.py`, `templates/.../inc/device_form.html` | The device panel, the device form script, and the note on netbox-change-approval's change request page. |
 | `reference.py`, `views.TemplateReferenceView` | The template reference page linked from the rule form. Tests check it lists every value root and filter of `template.py`. |
 | `forms.py` | The rule form. `number_source` is an `HTMXSelect`: changing it draws the form again without the fields of the other source (like NetBox's rack form does for rack types). |
+| `preview.py`, `views.NamingRulePreviewView` | The preview on the rule form (see below). |
 | `integrations.py` | Detects netbox-change-approval (no code depends on it). |
 
 ## Which rule wins
@@ -148,6 +149,27 @@ The script is left out when there are no enabled rules. The setting
 The lock is a convenience, not protection: anyone can unlock it, and the
 API and CSV import have no form. A rule with enforcement *refuse* is what
 makes the server turn down names that don't follow it.
+
+## The rule form preview
+
+The *Try on device* field uses `forms.PreviewDeviceSelect`, NetBox's
+`APISelect` with the preview below it
+(`templates/.../inc/preview_device.html`). The preview `hx-post`s the whole
+rule form to `NamingRulePreviewView` on load and whenever the form changes
+(`?rule=<pk>` when editing), so it is drawn again when the number source
+redraws the form too. The field is not a model field and is never saved.
+
+The view validates a `NamingRuleForm` without saving, and
+`preview.rule_draft()` turns `form.instance` into the rule as the form has
+it: enabled, and its conditions put in Django's prefetch cache
+(`instance._prefetched_objects_cache`, one evaluated queryset per field of
+`CONDITION_FIELDS`), so `rule.roles.all()` and `.exists()` answer from the
+form. Django reads many-to-many values only from an instance with a primary
+key, so a new rule gets `pk = 0` (`UNSAVED_PK`). `matching.rule_devices()`
+puts the rule it is given in place of its saved version when it orders the
+rules, which is what lets the draft be compared with the other rules.
+Devices are those the user may view; numbers are kept distinct within the
+preview like on the rename page.
 
 ## Renaming from the rule page
 
