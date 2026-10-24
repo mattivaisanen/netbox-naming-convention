@@ -46,6 +46,7 @@ that, the lock would drop the moment the empty form found no rule.
 | `template_content.py`, `templates/.../inc/name_form.html` | The naming panel, the name field script on the add and edit forms, and the note on netbox-change-approval's change request page. |
 | `reference.py`, `views.TemplateReferenceView` | The template reference page linked from the rule form. Tests check it lists every value root and filter of `template.py`. |
 | `forms.py` | The rule form. `object_type` and `number_source` are `HTMXSelect`s: changing them draws the form again with only the conditions, *Wait for* values and number fields that apply (like NetBox's rack form does for rack types). |
+| `report.py`, `views.NamingReportView` | The naming report (see below). |
 | `preview.py`, `views.NamingRulePreviewView` | The preview on the rule form (see below). |
 | `integrations.py` | Detects netbox-change-approval (no code depends on it). |
 
@@ -222,9 +223,19 @@ rules, which is what lets the draft be compared with the other rules.
 Devices are those the user may view; numbers are kept distinct within the
 preview like on the rename page.
 
-## Renaming from the rule page
+## The naming report
 
-`NamingRuleRenameView` takes the ticked objects, works out their new names
+`report.build_report()` goes through the objects of one kind the user may
+view (at most `REPORT_LIMIT`), finds each one's rule with the rules loaded
+once (`find_rule(obj, rules, tag_slugs)`, tags prefetched) and puts it in a
+group: `drifted`, `unnamed`, `no_rule` or `follows`. Only the objects of
+the group shown get a suggestion (at most `REPORT_SHOWN`, numbers kept
+distinct like on the rename page).
+
+## Renaming from the rule page or the report
+
+`NamingRuleRenameView` (one rule) and `NamingReportRenameView` (each object
+by its own rule) take the ticked objects, work out their new names
 with `rename_plan()` (`suggest(..., taken=...)` keeps numbers distinct
 within the batch) and shows old and new names. The confirm button posts
 `id,name` CSV to NetBox's own import for the kind (`Kind.import_view`), with

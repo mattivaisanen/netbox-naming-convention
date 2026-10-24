@@ -218,6 +218,7 @@ class ViewTests(NetBoxData, TestCase):
         two = self.device(name='old-2', rack=self.jk9)
         page = self.client.get(self.switches.get_absolute_url())
         self.assertContains(page, reverse(URL + 'namingrule_rename', args=[self.switches.pk]))
+        self.assertContains(page, f'name="pk" value="{one.pk}"')  # the objects can be ticked
         page = self.client.post(reverse(URL + 'namingrule_rename', args=[self.switches.pk]),
                                 {'pk': [one.pk, two.pk]})
         self.assertEqual(page.status_code, 200)
@@ -232,6 +233,33 @@ class ViewTests(NetBoxData, TestCase):
         two.refresh_from_db()
         self.assertEqual((one.name, two.name), ('FITASWI001_JK8', 'FITASWI002_JK9'))
         self.assertEqual(AssignedName.of(one).get().how, 'suggested')
+
+    def test_naming_report(self):
+        follows = self.device(rack=self.jk8)
+        drifted = self.device(name='old-1', rack=self.jk9)
+        # Made before the rule (bulk_create skips the plugin's save hooks).
+        unnamed, = Device.objects.bulk_create([self.device(rack=self.jk8, save=False)])
+        router = self.device(name='r1', role=self.router)
+        url = reverse(URL + 'report')
+        page = self.client.get(url)
+        report = page.context['report']
+        self.assertEqual(report.counts, {'follows': 1, 'drifted': 1, 'unnamed': 1, 'no_rule': 1})
+        self.assertEqual([(entry.rule, entry.count, entry.drifted) for entry in report.rules],
+                         [(self.switches, 3, 2)])
+        self.assertEqual([obj.pk for obj in report.shown], [drifted.pk])
+        self.assertContains(page, 'FITASWI002_JK9')
+        self.assertContains(page, f'name="pk" value="{drifted.pk}"')
+        page = self.client.get(url, {'show': 'no_rule'})
+        self.assertEqual([obj.pk for obj in page.context['report'].shown], [router.pk])
+        self.assertNotContains(page, 'Rename selected')
+        # Ticked objects are renamed by their own rules; one without a rule is left alone.
+        page = self.client.post(reverse(URL + 'report_rename') + '?object_type=device',
+                                {'pk': [drifted.pk, unnamed.pk, router.pk, follows.pk]})
+        self.assertEqual(page.context['data'], f'id,name\n{drifted.pk},FITASWI002_JK9\n{unnamed.pk},FITASWI003_JK8\n')
+        self.assertEqual([obj for obj, _reason in page.context['skipped']], [router])
+        # Racks have their own tab.
+        page = self.client.get(url, {'object_type': 'rack'})
+        self.assertEqual(page.context['report'].counts['no_rule'], 2)
 
     def test_rule_preview(self):
         named = self.device(rack=self.jk8)

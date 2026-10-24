@@ -1,4 +1,5 @@
 import django_tables2 as tables
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from dcim.models import Device
@@ -52,7 +53,22 @@ class RuleObjectTable(NetBoxTable):
 
     def __init__(self, data, kind, **kwargs):
         hidden = [name for name in ('site', 'location', 'rack', 'cluster', 'role') if name not in kind.columns]
-        super().__init__(data, exclude=hidden, **kwargs)
+        super().__init__(data, exclude=hidden + ['id', 'actions'], **kwargs)
+        # NetBox hides the checkboxes unless a list view turns them on.
+        self.columns.show('pk')
 
     def render_suggested(self, record):
         return getattr(record, 'suggested_name', None) or '—'
+
+
+class ReportObjectTable(RuleObjectTable):
+    """Objects listed on the naming report, with the rule that names them."""
+    rule = tables.Column(verbose_name=_('Rule'), orderable=False, empty_values=())
+
+    class Meta(RuleObjectTable.Meta):
+        fields = ('pk', 'name', 'site', 'location', 'rack', 'cluster', 'role', 'rule', 'suggested')
+        default_columns = fields
+
+    def render_rule(self, record):
+        rule = getattr(record, 'naming_rule', None)
+        return format_html('<a href="{}">{}</a>', rule.get_absolute_url(), rule) if rule else '—'

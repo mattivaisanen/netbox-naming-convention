@@ -1,7 +1,7 @@
 {% extends 'base/layout.html' %}
 {% load i18n %}
 
-{% block title %}{% blocktrans with rule=object kinds=kind.label_plural %}Rename {{ kinds }} to the rule "{{ rule }}"{% endblocktrans %}{% endblock %}
+{% block title %}{% if rule %}{% blocktrans with kinds=kind.label_plural %}Rename {{ kinds }} to the rule "{{ rule }}"{% endblocktrans %}{% else %}{% blocktrans with kinds=kind.label_plural %}Rename {{ kinds }} to their rules{% endblocktrans %}{% endif %}{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -43,7 +43,7 @@
         {% trans "The names are saved through NetBox's import, like any bulk edit: with your permissions, in the change log, and through approval when netbox-change-approval is installed. A number someone takes in the meantime makes that row fail; open this page again for fresh names." %}
       </p>
       <div class="text-end">
-        <a href="{{ object.get_absolute_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+        <a href="{{ back_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
         {% if rows %}<button type="submit" class="btn btn-primary">{% blocktrans with n=rows|length %}Rename {{ n }}{% endblocktrans %}</button>{% endif %}
       </div>
     </form>

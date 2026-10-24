@@ -58,6 +58,13 @@ Everything below works the same for devices, virtual machines and racks;
   Tick some of them and *Rename selected to the suggested names* shows old
   and new names; confirming sends them through NetBox's own device import,
   so permissions, the change log and approvals work as for any bulk edit.
+- **Naming report** (*Naming → Naming report*): for devices, virtual
+  machines and racks, how many have a name that doesn't follow their rule,
+  have no name yet, aren't named by any rule, or follow their rule, with a
+  count per rule. Each group lists its objects (the first 100) with the
+  rule and the suggested name, and the same *Rename selected* as on a rule
+  page, here with each object renamed by its own rule. Only objects you may
+  view are counted, up to 5000 per kind.
 
 ## Requirements
 

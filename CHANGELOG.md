@@ -4,6 +4,9 @@
 
 New:
 
+- Naming report (*Naming → Naming report*): every device, virtual machine
+  or rack whose name doesn't follow its rule, that has no name yet, or that
+  no rule names, with the suggested names and *Rename selected*.
 - Rules can name virtual machines and racks too. A rule's *Names* field
   says which; the form then shows that kind's conditions (clusters,
   virtual machine types, rack roles, rack types...), *Wait for* values and
@@ -46,6 +49,8 @@ New:
 
 Fixed:
 
+- *Rename selected to the suggested names* on a rule page had no
+  checkboxes to select with.
 - With two rules on the same priority, the one first by name won, even
   when the other matched more (a switch tagged OT got the general switch
   rule). Now the rule with more kinds of conditions wins on a tie.
