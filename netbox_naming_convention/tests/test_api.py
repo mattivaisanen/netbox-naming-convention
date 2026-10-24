@@ -82,6 +82,12 @@ class APITests(NetBoxData, TestCase):
         self.assertEqual(data['name'], 'FITASWI001_JK9')
         self.assertEqual(data['current'], 'FITASWI001_JK8')
 
+    def test_suggest_for_existing_device_waits_for_a_cleared_field(self):
+        # The device form sends a cleared field as null; the saved rack must not be used.
+        device = self.device(rack=self.jk8)
+        data = self.post(reverse(SUGGEST), {'device': device.pk, 'rack': None}).json()
+        self.assertEqual((data['ready'], data['missing']), (False, ['rack']))
+
     def test_suggest_needs_device_permission(self):
         user = get_user_model().objects.create(username='viewer')
         self.client.force_login(user)

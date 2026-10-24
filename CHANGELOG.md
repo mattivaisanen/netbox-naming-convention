@@ -42,6 +42,10 @@ Fixed:
   next free number. The suggestion now comes from the name the device has.
 - A device renamed by hand was offered a new number. It now gets back the
   number the rule gave it, while no other device has taken it.
+- On the device form, clearing a field the name waits for (such as the
+  site) after a rule had filled in the name left the name field open to
+  typing, or kept the old suggestion on the edit form. The name is now
+  taken away and the field waits again until the field is set.
 
 ## 0.1.0 (2026-10-23)
 
