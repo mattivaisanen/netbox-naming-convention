@@ -137,12 +137,16 @@ because `head()` is the only hook on edit pages) adds
 `inc/device_form.html` on `dcim:device_add` and `dcim:device_edit`. The
 script sends the form's values to the suggest endpoint whenever they change
 (form `change` events, plus a check every 1.5 s because TomSelect does not
-always produce one), with the session cookie and CSRF token.
+always produce one), with the session cookie and CSRF token. A field on
+the form that is empty is sent as `null`, so the edit form's suggestion
+does not fall back to the device's saved value.
 
 - Add: the field starts locked (read-only and grayed)
   before anything is chosen, so nobody types a name the rule would have
-  given; it says it is filled in once role and device type are set. When
-  they are set and no rule matches, the field is NetBox's own again. While
+  given; it says it is filled in once site, role and device type are set
+  (`BASICS`, what NetBox needs to save a device). When they are set and no
+  rule matches, the field is NetBox's own again; when one is cleared again,
+  the field goes back to waiting (unless the person unlocked it). While
   locked, the field holds the rule's name and a hidden `_naming_auto=1` goes
   with the form. `signals._form_says_auto()` sees it and treats the name as
   the plugin's, so the number is picked again under the lock at save. The

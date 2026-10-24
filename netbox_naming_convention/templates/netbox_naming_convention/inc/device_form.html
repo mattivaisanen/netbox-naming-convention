@@ -16,7 +16,6 @@ document.addEventListener('DOMContentLoaded', function () {
     suggested: '{{ _("Suggested name")|escapejs }}',
     waiting: '{{ _("Filled in once set")|escapejs }}',
     confirmed: '{{ _("The number is confirmed when you save.")|escapejs }}',
-    kind: '{{ _("Filled in by a naming rule once the device role and device type are set.")|escapejs }}',
     typing: '{{ _("You are typing your own name.")|escapejs }}',
     parent: '{{ _("parent")|escapejs }}'
   };
@@ -75,8 +74,8 @@ document.addEventListener('DOMContentLoaded', function () {
     return lines;
   }
 
-  function waitingLine() {
-    return [TEXT.waiting, last.missing.map(labelFor).join(', ')];
+  function waitingLine(missing) {
+    return [TEXT.waiting, (missing || last.missing).map(labelFor).join(', ')];
   }
 
   function suggestedLine() {
@@ -127,7 +126,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var out = {};
     FIELDS.forEach(function (key) {
       var value = data.get(key);
-      if (value !== null && value !== '') { out[key] = value; }
+      if (value !== null && value !== '') {
+        out[key] = value;
+      } else if (form.elements[key]) {
+        // Cleared: say so, or the edit form's suggestion keeps the saved value.
+        out[key] = null;
+      }
     });
     out.tags = data.getAll('tags').filter(function (v) { return v !== ''; }).map(Number);
     var cf = {};
@@ -175,20 +179,26 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  function kindsSet() {
+  // What NetBox needs before a device can be saved, and what tells whether
+  // a rule names it.
+  var BASICS = ['site', 'role', 'device_type'];
+
+  function basicsMissing() {
     var data = new FormData(form);
-    return !!data.get('role') && !!data.get('device_type');
+    return BASICS.filter(function (key) { return form.elements[key] && !data.get(key); });
   }
 
   function showAdd() {
     var rule = last && last.rule;
     again.hidden = true;
     if (!rule) {
-      if (locked && !kindsSet()) {
-        // Nothing to go on yet: keep the field for the rule.
+      var missing = basicsMissing();
+      if (locked && missing.length) {
+        // Not enough to go on (yet, or again after a field was cleared):
+        // keep the field for the rule.
         lock(true);
         input.value = '';
-        setNote([TEXT.kind]);
+        setNote([waitingLine(missing)]);
         setIcon('mdi-pencil', TEXT.edit);
         return;
       }
@@ -307,7 +317,11 @@ document.addEventListener('DOMContentLoaded', function () {
   // sees; look for changed values now and then too.
   setInterval(ask, 1500);
   if (locked) { lock(true); }
-  if (MODE === 'add' && locked) { setNote([TEXT.kind]); setIcon('mdi-pencil', TEXT.edit); }
+  if (MODE === 'add' && locked) {
+    var missing = basicsMissing();
+    setNote(missing.length ? [waitingLine(missing)] : []);
+    setIcon('mdi-pencil', TEXT.edit);
+  }
   ask();
 });
 </script>

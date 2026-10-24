@@ -59,6 +59,10 @@ Fixed:
   preferences any more, and the rule form refuses fields devices don't have.
 - The rule page and *Rename selected* ran many database queries per device;
   they run far fewer now.
+- On the device form, clearing a field the name waits for (such as the
+  site) after a rule had filled in the name left the name field open to
+  typing, or kept the old suggestion on the edit form. The name is now
+  taken away and the field waits again until the field is set.
 
 ## 0.1.0 (2026-10-23)
 
