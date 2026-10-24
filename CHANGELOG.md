@@ -11,7 +11,9 @@ New:
   machine and rack forms get the same locked name field, the naming panel
   and *Suggest again*, the REST API fills in their names, and the rule page
   renames them in bulk. Devices, virtual machines and racks count their
-  numbers separately. Existing rules keep naming devices.
+  numbers separately. Existing rules keep naming devices. A virtual
+  machine with only a cluster is matched and named with the cluster's site,
+  the site NetBox gives it when it is saved.
 - The rule form previews the rule as you type: what names look like, the
   names it would give the first ten of its devices, and the name a device
   you pick would get (and whether another rule names it first). Nothing is

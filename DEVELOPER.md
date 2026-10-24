@@ -21,6 +21,17 @@ the plugin asks the kind instead of naming devices: `rules_queryset(kind)`,
 means a `Kind` here, its condition fields on `NamingRule` (and the form,
 serializer and migration) and its values in `reference.VALUES`.
 
+`Kind.defaults` fills in what NetBox only fills in on save, so a rule sees
+an object on its form as it will be saved: a virtual machine without a site
+gets its cluster's (or host device's) site, as `VirtualMachine.save()`
+does. `kinds.prepare(obj)` runs it at the start of `find_rule()` and
+`naming._render()`, and changes only empty fields.
+
+On the add forms the name stays locked while nothing a rule could match on
+is chosen yet (`kindsSet()` in `name_form.html`): a device needs role and
+device type, other kinds any of their form fields besides status. Without
+that, the lock would drop the moment the empty form found no rule.
+
 ## Modules
 
 | Module | Does |

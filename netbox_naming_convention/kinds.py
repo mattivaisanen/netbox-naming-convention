@@ -25,7 +25,7 @@ from dcim.choices import DeviceStatusChoices, RackStatusChoices
 from utilities.choices import ChoiceSet
 from virtualization.choices import VirtualMachineStatusChoices
 
-__all__ = ('Condition', 'Kind', 'KINDS', 'ObjectTypeChoices', 'DEVICE', 'VIRTUAL_MACHINE', 'RACK', 'kind_of')
+__all__ = ('Condition', 'Kind', 'KINDS', 'ObjectTypeChoices', 'DEVICE', 'VIRTUAL_MACHINE', 'RACK', 'kind_of', 'prepare')
 
 
 @dataclass(frozen=True)
@@ -79,6 +79,9 @@ class Kind:
     import_view: str = ''
     #: Columns of the rule page's table of objects that don't follow the rule.
     columns: tuple = field(default=())
+    #: Fills in what NetBox itself fills in when the object is saved, so a
+    #: rule sees the object as it will be (see prepare()).
+    defaults: object = None
 
     @property
     def model(self):
@@ -106,6 +109,18 @@ class Kind:
         if self.required_conditions and not any(values.get(name) for name in self.required_conditions):
             errors[self.required_conditions[0]] = _('A device rule needs at least one role or device type.')
         return errors
+
+
+def _vm_site(vm):
+    """NetBox gives a virtual machine without a site the site of its cluster or host device on save."""
+    if vm.site_id is not None:
+        return
+    cluster = vm.cluster if vm.cluster_id else None
+    device = vm.device if vm.device_id else None
+    if cluster is not None and cluster._site_id is not None:
+        vm.site = cluster._site
+    elif device is not None and device.site_id is not None:
+        vm.site = device.site
 
 
 DEVICE = Kind(
@@ -193,6 +208,7 @@ VIRTUAL_MACHINE = Kind(
     edit_view='virtualization:virtualmachine_edit',
     import_view='virtualization:virtualmachine_bulk_import',
     columns=('site', 'cluster', 'role'),
+    defaults=_vm_site,
 )
 
 RACK = Kind(
@@ -243,6 +259,17 @@ _BY_LABEL = {kind.model_label: kind for kind in KINDS.values()}
 def kind_of(obj):
     """The Kind of a model instance or class, or None for anything else."""
     return _BY_LABEL.get(obj._meta.label_lower)
+
+
+def prepare(obj):
+    """
+    Fill in on `obj` what NetBox fills in when it is saved (a virtual
+    machine's site from its cluster), so a rule matches and names an object
+    on its form as it will be saved. Changes only fields that are empty.
+    """
+    kind = kind_of(obj)
+    if kind is not None and kind.defaults is not None:
+        kind.defaults(obj)
 
 
 class ObjectTypeChoices(ChoiceSet):

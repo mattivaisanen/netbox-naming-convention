@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', function () {
     suggested: '{{ _("Suggested name")|escapejs }}',
     waiting: '{{ _("Filled in once set")|escapejs }}',
     confirmed: '{{ _("The number is confirmed when you save.")|escapejs }}',
-    kind: '{{ _("Filled in by a naming rule once the device role and device type are set.")|escapejs }}',
+    kind: '{% if naming_type == "device" %}{{ _("Filled in by a naming rule once the device role and device type are set.")|escapejs }}{% else %}{{ _("Filled in once a naming rule matches what you choose below.")|escapejs }}{% endif %}',
     typing: '{{ _("You are typing your own name.")|escapejs }}',
     parent: '{{ _("parent")|escapejs }}'
   };
@@ -182,9 +182,15 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+  // Whether the form says enough for a rule to match: the fields every rule
+  // needs (a device's role and type), or else anything chosen at all (the
+  // status has a default, so it doesn't count).
   function kindsSet() {
     var data = new FormData(form);
-    return KIND_FIELDS.every(function (key) { return !!data.get(key); });
+    if (KIND_FIELDS.length) {
+      return KIND_FIELDS.every(function (key) { return !!data.get(key); });
+    }
+    return FIELDS.some(function (key) { return key !== 'status' && !!data.get(key); });
   }
 
   function showAdd() {

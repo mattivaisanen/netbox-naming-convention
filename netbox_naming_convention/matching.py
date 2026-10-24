@@ -15,7 +15,7 @@ match their children too.
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Manager
 
-from .kinds import DEVICE, kind_of
+from .kinds import DEVICE, kind_of, prepare
 from .models import NamingRule, TagMatchChoices
 
 __all__ = ('find_rule', 'rule_matches', 'object_tag_slugs', 'rules_queryset', 'ordered_rules', 'rule_objects')
@@ -301,12 +301,16 @@ def rule_matches(rule, obj, tag_slugs=None):
     return constraint_matches(rule.constraint, obj)
 
 
-def find_rule(obj, rules=None):
-    """The first enabled rule for `obj`'s kind that matches it (see ordered_rules()), or None."""
+def find_rule(obj, rules=None, tag_slugs=None):
+    """
+    The first enabled rule for `obj`'s kind that matches it (see
+    ordered_rules()), or None. `tag_slugs` saves a query per object when the
+    caller has the tags already.
+    """
     kind = kind_of(obj)
     if kind is None:
         return None
-    tag_slugs = None
+    prepare(obj)
     for rule in ordered_rules(rules if rules is not None else rules_queryset(kind)):
         if rule.kind is not kind:
             continue

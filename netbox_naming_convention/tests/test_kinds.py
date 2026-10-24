@@ -54,6 +54,25 @@ class KindTests(NetBoxData, TestCase):
         first.delete()
         self.assertFalse(AssignedName.objects.filter(name='PROD-VM001').exists())
 
+    def test_virtual_machine_takes_the_site_of_its_cluster(self):
+        # NetBox gives a VM its cluster's site on save; a rule for that site names it.
+        self.cluster.scope = self.tampere
+        self.cluster.save()
+        rule = NamingRule.objects.create(
+            name='Tampere VMs', object_type='virtualmachine', template='{site.slug|upper}-VM{n}', priority=10,
+        )
+        rule.sites.set([self.tampere])
+        self.vms.delete()
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse(SUGGEST), {'object_type': 'virtualmachine', 'cluster': self.cluster.pk},
+            content_type='application/json',
+        )
+        self.assertEqual(response.json()['name'], 'TAMPERE-VM001')
+        vm = VirtualMachine(cluster=self.cluster)
+        vm.save()
+        self.assertEqual(vm.name, 'TAMPERE-VM001')
+
     def test_racks_count_apart_from_devices(self):
         self.device(name='TAMPERE-R01', rack=self.jk8)
         rack = Rack(site=self.tampere, role=self.storage)

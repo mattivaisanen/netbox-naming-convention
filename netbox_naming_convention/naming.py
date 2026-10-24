@@ -21,6 +21,7 @@ from django.utils.translation import gettext as _
 
 from netbox.context import current_request
 
+from .kinds import prepare
 from .matching import _related, find_rule
 from .models import AssignedName, NamingSeries, NumberSourceChoices
 from .numbering import (
@@ -110,6 +111,7 @@ def _render(obj, rule):
         out.error = _('The rule "{rule}" has a broken template: {error}').format(rule=rule, error=e)
         return out, False
     kind = rule.kind
+    prepare(obj)
     rendered = template.render(lambda path: resolve(obj, path, kind))
     filters = rule.parsed_name_filters
     out.prefix = filter_name(rendered.prefix, filters)
