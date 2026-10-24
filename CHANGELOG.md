@@ -46,6 +46,23 @@ Fixed:
   next free number. The suggestion now comes from the name the device has.
 - A device renamed by hand was offered a new number. It now gets back the
   number the rule gave it, while no other device has taken it.
+- One device with a name above the rule's range, such as SW5000 in a
+  3-digit series, made the series "full" for every new device. Numbers
+  above the range are now ignored when picking the next one.
+- A name typed by hand with a very long number (SW99999999999) made saving
+  the device fail with a server error. Numbers outside the rule's range are
+  no longer remembered as handed out.
+- A large range in *Numbers never handed out*, such as `1-999999000`, made
+  saving a device take minutes. Skipped ranges are now jumped over at once.
+- When the number shown on the form was taken by someone else and the
+  series had no other free number, the device was saved with the taken
+  number anyway. Saving now stops with "The series ... is full".
+- The advanced condition could follow a device's relations to users, so
+  someone who may edit rules could test a user's password hash one
+  character at a time. Conditions can't reach users, their API tokens or
+  preferences any more, and the rule form refuses fields devices don't have.
+- The rule page and *Rename selected* ran many database queries per device;
+  they run far fewer now.
 
 ## 0.1.0 (2026-10-23)
 

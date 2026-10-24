@@ -26,6 +26,7 @@ from django.dispatch import receiver
 from dcim.models import Device
 from netbox.context import current_request
 from netbox.signals import post_clean
+from utilities.exceptions import AbortRequest
 
 from . import naming
 from .matching import find_rule
@@ -138,9 +139,14 @@ def name_on_save(sender, instance, raw=False, **kwargs):
     naming.unmark_auto(instance)
     suggestion = naming.assign(instance, rule)
     if not suggestion.ready:
-        # Leave it as it was: validation already said what is wrong, and code
-        # that saves without validating gets NetBox's normal behaviour.
-        instance.name = provisional or instance.name
+        if provisional:
+            # Validation filled in a name, but its number can't be taken now
+            # (the series filled up, or the IP's number was taken meanwhile).
+            # Saving the name anyway would hand out a number twice. NetBox's
+            # views, import and API show AbortRequest as an ordinary error.
+            raise AbortRequest(suggestion.error or _waiting(rule, suggestion))
+        # A device saved without a name, often without validating (NetBox
+        # setting a primary IP): it stays unnamed, as NetBox would leave it.
         if suggestion.error:
             logger.warning('Device %s not named by rule "%s": %s', instance.pk or '(new)', rule, suggestion.error)
         return

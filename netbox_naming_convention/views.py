@@ -14,12 +14,14 @@ from netbox.views import generic
 from utilities.views import register_model_view
 
 from . import filtersets, forms, preview, reference, tables
-from .matching import find_rule, rule_devices
+from .matching import find_rule, ordered_rules, rule_devices
 from .models import NamingRule, NamingSeries
 from .naming import _number_of, _render, follows, suggest
 
 #: Most devices a rule page looks at.
 RULE_PAGE_LIMIT = 2000
+#: Most devices the rule page lists (with a suggested name) as not following the rule.
+DRIFTED_SHOWN = 100
 
 
 @register_model_view(NamingRule, 'list', path='', detail=False)
@@ -48,9 +50,11 @@ def rule_overview(rule):
                 entry['highest'] = max(entry['highest'] or 0, number)
         _rule, fits = follows(device, rule)
         if not fits:
-            hint = suggest(device, rule)
-            device.suggested_name = hint.name if hint.ready else None
             drifted.append(device)
+    # A suggestion costs a few queries: only for the devices the page lists.
+    for device in drifted[:DRIFTED_SHOWN]:
+        hint = suggest(device, rule)
+        device.suggested_name = hint.name if hint.ready else None
     stored = dict(NamingSeries.objects.filter(key__in=list(series)).values_list('key', 'high_water'))
     for entry in series.values():
         entry['high_water'] = stored.get(entry['key'], 0)
@@ -75,7 +79,7 @@ class NamingRuleView(generic.ObjectView):
 
     def get_extra_context(self, request, instance):
         overview = rule_overview(instance)
-        table = tables.RuleDeviceTable(overview['drifted'][:100], orderable=False)
+        table = tables.RuleDeviceTable(overview['drifted'][:DRIFTED_SHOWN], orderable=False)
         return {**overview, 'drifted_table': table, 'drifted_count': len(overview['drifted'])}
 
 
@@ -139,8 +143,9 @@ def rename_plan(rule, devices):
     renamed with why.
     """
     rows, skipped, taken = [], [], {}
+    rules = ordered_rules()  # once, not per device
     for device in devices:
-        if find_rule(device) != rule:
+        if find_rule(device, rules) != rule:
             skipped.append((device, _('Another rule names this device.')))
             continue
         hint = suggest(device, rule, taken=taken)
