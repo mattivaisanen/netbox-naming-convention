@@ -12,11 +12,12 @@ from utilities.forms.fields import (
 )
 from utilities.forms.rendering import FieldSet
 from utilities.forms.utils import get_field_value
-from utilities.forms.widgets import APISelect, HTMXSelect
+from utilities.forms.widgets import APISelect, DatePicker, HTMXSelect
 from virtualization.models import Cluster, VirtualMachineType
 
 from .kinds import DEVICE, KINDS
 from .models import EnforcementChoices, NamingRule, NumberSourceChoices, ObjectTypeChoices, RequiredValueChoices
+from .naming import RESERVE_LIMIT
 
 
 class PreviewObjectSelect(APISelect):
@@ -204,3 +205,39 @@ class NamingRuleFilterForm(NetBoxModelFilterSetForm):
     number_source = forms.MultipleChoiceField(choices=NumberSourceChoices, required=False, label=_('Number source'))
     enforcement = forms.MultipleChoiceField(choices=EnforcementChoices, required=False, label=_('Enforcement'))
     tag = TagFilterField(model)
+
+
+class ReserveForm(forms.Form):
+    """
+    Reserve names of a rule: how many, until when, and the values the names
+    are built from (the site, rack and so on of the objects to come). A value
+    the rule's conditions name only one of starts filled in.
+    """
+    count = forms.IntegerField(label=_('How many'), min_value=1, max_value=RESERVE_LIMIT, initial=1)
+    expires = forms.DateField(
+        label=_('Expires'), required=False, widget=DatePicker(),
+        help_text=_('After this day the numbers are free again. Empty: kept until used or removed.'),
+    )
+    description = forms.CharField(label=_('Description'), max_length=200, required=False)
+
+    def __init__(self, rule, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rule = rule
+        kind = rule.kind
+        model = kind.model
+        only = {}
+        for condition in kind.conditions:
+            values = list(getattr(rule, condition.field).all())
+            if len(condition.path) == 1 and len(values) == 1:
+                only[condition.path[0]] = values[0].pk
+        #: The form's fields the names are built from.
+        self.value_fields = []
+        for key in kind.form_fields:
+            field = model._meta.get_field(key)
+            if not field.is_relation or key.startswith('primary_ip'):
+                continue
+            self.fields[key] = DynamicModelChoiceField(
+                label=field.verbose_name.capitalize(), queryset=field.related_model.objects.all(), required=False,
+                initial=only.get(key), query_params={'site_id': '$site'} if key in ('location', 'rack') else None,
+            )
+            self.value_fields.append(key)

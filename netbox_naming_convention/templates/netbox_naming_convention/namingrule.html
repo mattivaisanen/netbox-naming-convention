@@ -86,6 +86,44 @@
         <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}All {{ kinds }} of this rule follow it.{% endblocktrans %}</div>
       {% endif %}
     </div>
+    {% if object.number_source != 'ip' %}
+    <div class="card">
+      <h2 class="card-header">
+        {% blocktrans with n=reserved|length %}Reserved names ({{ n }}){% endblocktrans %}
+        {% if can_reserve %}
+        <div class="card-actions">
+          <a href="{% url 'plugins:netbox_naming_convention:namingrule_reserve' pk=object.pk %}" class="btn btn-ghost-primary btn-sm"><i class="mdi mdi-plus-thick"></i> {% trans "Reserve names" %}</a>
+        </div>
+        {% endif %}
+      </h2>
+      {% if reserved %}
+      <form action="{% url 'plugins:netbox_naming_convention:namingrule_unreserve' pk=object.pk %}" method="post">
+        {% csrf_token %}
+        <table class="table table-hover">
+          <thead><tr>{% if can_unreserve %}<th></th>{% endif %}<th>{% trans "Name" %}</th><th>{% trans "Expires" %}</th><th>{% trans "Description" %}</th><th>{% trans "Reserved by" %}</th></tr></thead>
+          <tbody>
+          {% for r in reserved %}
+            <tr{% if r.expired %} class="text-muted"{% endif %}>
+              {% if can_unreserve %}<td><input type="checkbox" class="form-check-input" name="pk" value="{{ r.pk }}" aria-label="{{ r.name }}"></td>{% endif %}
+              <td class="font-monospace">{{ r.name }}</td>
+              <td>{% if r.expires %}{{ r.expires|date:"Y-m-d" }}{% if r.expired %} ({% trans "expired" %}){% endif %}{% else %}{{ ''|placeholder }}{% endif %}</td>
+              <td>{{ r.description|placeholder }}</td>
+              <td>{{ r.created_by|placeholder }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% if can_unreserve %}
+        <div class="card-footer text-end">
+          <button type="submit" class="btn btn-sm btn-outline-danger"><i class="mdi mdi-close"></i> {% trans "Free selected" %}</button>
+        </div>
+        {% endif %}
+      </form>
+      {% else %}
+      <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}Reserve names for {{ kinds }} that don't exist in NetBox yet, for labels or an order. A reserved number is not given to anyone else; saving an object with the name uses it up.{% endblocktrans %}</div>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

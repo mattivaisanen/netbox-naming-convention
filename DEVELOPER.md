@@ -40,7 +40,7 @@ that, the lock would drop the moment the empty form found no rule.
 | `template.py` | Parses a template into text, value and number parts; renders it for an object; lists missing values. Unknown values and filters are refused when a rule is saved. No database. |
 | `numbering.py` | Series keys, the regular expression that reads a number back out of a name, used numbers (from names in the database), the next number, numbers from an IP. |
 | `matching.py` | Which rule names an object (in memory, see below), and `rule_objects()` for the rule page and the preview. |
-| `naming.py` | `suggest()` (no writes), `assign()` (under the series lock), `remember()`, `follows()`, `check_typed_name()`. |
+| `naming.py` | `suggest()` (no writes), `assign()` and `reserve()` (under the series lock), `remember()`, `follows()`, `check_typed_name()`. |
 | `signals.py` | The save hooks, connected for each kind's model by `signals.connect()` in `ready()`. |
 | `api/patches.py` | The wrapped NetBox serializers (see below). |
 | `template_content.py`, `templates/.../inc/name_form.html` | The naming panel, the name field script on the add and edit forms, and the note on netbox-change-approval's change request page. |
@@ -258,6 +258,21 @@ not what is typed in the field, so typing doesn't change the suggestion.
 `Suggestion.pattern` (from `Rendered.pattern`) is the rule's name for the
 device with `###` for the number and `<rack>` for a missing value, for the
 form's hint.
+
+## Reserved names
+
+`naming.reserve()` takes numbers like `assign()`: under the series lock,
+raising the high-water mark. The rows are `ReservedName`, a plain model
+like `NamingSeries` (reserving must not wait for approval), with a
+`RestrictedQuerySet` manager so NetBox's object permissions and
+`BaseViewSet` work on it. `_pick()` adds the numbers of the series' active
+reservations to the used ones, except a reservation of the object's own
+name, so the object a name was reserved for can take it (also under
+*Refuse*, where `check_typed_name()` says a number is reserved). post_save
+deletes a reservation of the saved object's name. Expired reservations are
+ignored when numbers are picked and deleted when their series reserves
+again. Reserving ignores the rule's *Wait for* fields (`_render(waits=False)`):
+the objects don't exist yet, only the template's values count.
 
 ## REST API: the wrapped serializers
 

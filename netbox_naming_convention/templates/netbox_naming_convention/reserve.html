@@ -1,0 +1,35 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+{% load form_helpers %}
+
+{% block title %}{% blocktrans with rule=rule %}Reserve names of "{{ rule }}"{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col col-12 col-xl-8">
+    <form method="post">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors|join:" " }}</div>
+      {% endif %}
+      <div class="field-group my-4">
+        <div class="row"><h2 class="col-9 offset-3">{% trans "Reserve" %}</h2></div>
+        {% render_field form.count %}
+        {% render_field form.expires %}
+        {% render_field form.description %}
+      </div>
+      <div class="field-group my-4">
+        <div class="row"><h2 class="col-9 offset-3">{% blocktrans with kinds=rule.kind.label_plural %}The {{ kinds }} to come{% endblocktrans %}</h2></div>
+        <p class="text-muted offset-3">
+          {% blocktrans with template=rule.template %}The names are built from these values, as in the template <code>{{ template }}</code>. Leave out what the template doesn't use.{% endblocktrans %}
+        </p>
+        {% for key in form.value_fields %}{% render_field form|getfield:key %}{% endfor %}
+      </div>
+      <div class="text-end">
+        <a href="{{ rule.get_absolute_url }}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+        <button type="submit" class="btn btn-primary">{% trans "Reserve" %}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

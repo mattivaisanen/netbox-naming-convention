@@ -17,8 +17,10 @@ from virtualization.models import Cluster, VirtualMachineType
 
 from ..kinds import KINDS
 from ..models import (
-    EnforcementChoices, NamingRule, NumberScopeChoices, NumberSourceChoices, ObjectTypeChoices, TagMatchChoices,
+    EnforcementChoices, NamingRule, NumberScopeChoices, NumberSourceChoices, ObjectTypeChoices, ReservedName,
+    TagMatchChoices,
 )
+from ..naming import RESERVE_LIMIT
 
 
 def _many(model, serializer):
@@ -104,3 +106,30 @@ class SuggestSerializer(serializers.Serializer):
     primary_ip6 = serializers.IntegerField(required=False, allow_null=True)
     tags = serializers.ListField(child=serializers.IntegerField(), required=False)
     custom_fields = serializers.DictField(required=False)
+
+
+class ReserveSerializer(SuggestSerializer):
+    """What to reserve: the values the names are built from (as for suggest), how many, and for how long."""
+    rule = serializers.IntegerField(
+        required=False, allow_null=True, help_text='The rule to reserve from. Default: the rule that matches.',
+    )
+    count = serializers.IntegerField(required=False, default=1, min_value=1, max_value=RESERVE_LIMIT)
+    expires = serializers.DateField(required=False, allow_null=True)
+    description = serializers.CharField(required=False, allow_blank=True, default='', max_length=200)
+
+
+class ReservedNameSerializer(serializers.ModelSerializer):
+    url = serializers.HyperlinkedIdentityField(
+        view_name='plugins-api:netbox_naming_convention-api:reservedname-detail',
+    )
+    display = serializers.CharField(source='name', read_only=True)
+    object_type = ChoiceField(choices=ObjectTypeChoices, read_only=True)
+    rule = NamingRuleSerializer(nested=True, read_only=True)
+
+    class Meta:
+        model = ReservedName
+        fields = (
+            'id', 'url', 'display', 'name', 'object_type', 'rule', 'number', 'expires', 'expired', 'description',
+            'created_by', 'created',
+        )
+        brief_fields = ('id', 'url', 'display', 'name', 'object_type')

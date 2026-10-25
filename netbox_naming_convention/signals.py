@@ -14,7 +14,8 @@ see kinds.py). "Device" below stands for any of them.
   device without a name is named as soon as its rule has what it needs.
   The change log entry's message says the name came from the rule.
 - post_save: remembers which names a rule gave (AssignedName), for the
-  device page and change requests. post_delete forgets them.
+  device page and change requests, and uses up a reservation of the name
+  (ReservedName). post_delete forgets the names a rule gave.
 
 A device that has a name is never renamed here: renaming is always a person's
 edit (the device form's "Suggest again" button).
@@ -29,9 +30,9 @@ from netbox.signals import post_clean
 from utilities.exceptions import AbortRequest
 
 from . import naming
-from .kinds import KINDS
+from .kinds import KINDS, kind_of
 from .matching import find_rule
-from .models import AssignedHowChoices, AssignedName, EnforcementChoices
+from .models import AssignedHowChoices, AssignedName, EnforcementChoices, ReservedName
 
 logger = logging.getLogger('netbox_naming_convention')
 
@@ -162,8 +163,13 @@ def name_on_save(sender, instance, raw=False, **kwargs):
 
 
 def record_on_save(sender, instance, raw=False, **kwargs):
+    if raw:
+        return
+    if instance.name:
+        # The reserved name is in use now.
+        ReservedName.objects.filter(object_type=kind_of(instance).key, name__iexact=instance.name).delete()
     rule = getattr(instance, '_naming_assigned', None)
-    if rule is None or raw:
+    if rule is None:
         return
     instance._naming_assigned = None
     AssignedName.record(instance, instance.name, rule, AssignedHowChoices.AUTO)

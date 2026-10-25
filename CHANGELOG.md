@@ -4,6 +4,12 @@
 
 New:
 
+- Reserve names ahead of time: *Reserve names* on a rule page (or
+  `POST /api/plugins/naming-convention/reserve/`) takes the next names of
+  the rule for devices, virtual machines or racks that aren't in NetBox
+  yet, for labels or an order. Nobody else gets those numbers; saving an
+  object with the reserved name uses it up. Reservations can expire, and
+  the rule page frees them.
 - Naming report (*Naming → Naming report*): every device, virtual machine
   or rack whose name doesn't follow its rule, that has no name yet, or that
   no rule names, with the suggested names and *Rename selected*.

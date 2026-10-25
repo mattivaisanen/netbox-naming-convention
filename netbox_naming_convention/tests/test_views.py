@@ -142,6 +142,20 @@ class ViewTests(NetBoxData, TestCase):
         self.assertFalse(self.switches.roles.exists())  # racks have no device roles
         self.assertEqual(list(self.switches.sites.all()), [self.tampere])
 
+    def test_reserve_names_from_the_rule_page(self):
+        url = reverse(URL + 'namingrule_reserve', args=[self.switches.pk])
+        page = self.client.get(url)
+        self.assertContains(page, 'id="id_rack"')
+        response = self.client.post(url, {'count': 2, 'site': self.tampere.pk, 'role': self.access.pk,
+                                          'rack': self.jk8.pk})
+        self.assertEqual(response.status_code, 302, response.content[:3000])
+        page = self.client.get(self.switches.get_absolute_url())
+        self.assertContains(page, 'FITASWI001_JK8')
+        self.assertContains(page, 'FITASWI002_JK8')
+        first = self.switches.reserved_names.first()
+        self.client.post(reverse(URL + 'namingrule_unreserve', args=[self.switches.pk]), {'pk': [first.pk]})
+        self.assertEqual(list(self.switches.reserved_names.values_list('name', flat=True)), ['FITASWI002_JK8'])
+
     def test_ip_rule_form_saves_without_the_sequence_fields(self):
         response = self.client.post(reverse(URL + 'namingrule_add'), {
             'name': 'By IP', 'template': 'sw{n}', 'priority': 100, 'enabled': 'on', 'roles': [self.router.pk],
