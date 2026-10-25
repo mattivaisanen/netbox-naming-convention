@@ -129,7 +129,7 @@ name. Set different priorities when you want a fixed order.
 | Rack roles, rack types | Racks, optional. A rule without conditions names every rack. |
 | Regions, site groups, sites, locations, tenants, platforms, statuses | Optional. Within one field any listed value matches; all fields that have values must match. Child regions and locations match too. |
 | Device tags, tag match | Optional. The device needs all (or any) of the tags, for categories of devices that roles don't tell apart. |
-| Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. Users, their API tokens and preferences can't be used. |
+| Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. Users, tokens and permissions, data sources, the change log, content types, webhooks and event rules can't be used. |
 | Template | How the name is built, see below. |
 | Wait for | The fields that must be set before the name is filled in, besides the values the template uses, such as site, location, rack, role, device type, cluster, tenant, platform, serial number or asset tag (the form lists those of the rule's kind). New device rules wait for site, role and device type (what the device form requires), rack rules for the site, virtual machine rules for nothing. |
 | Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |

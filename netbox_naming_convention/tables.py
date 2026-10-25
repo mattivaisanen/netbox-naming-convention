@@ -25,13 +25,13 @@ class NamingRuleTable(NetBoxTable):
     class Meta(NetBoxTable.Meta):
         model = NamingRule
         fields = (
-            'pk', 'id', 'name', 'enabled', 'priority', 'object_type', 'template', 'roles', 'device_types', 'sites', 'match_tags',
-            'number_source', 'number_digits', 'number_first', 'number_last', 'fill_gaps', 'number_scope',
+            'pk', 'id', 'name', 'enabled', 'priority', 'object_type', 'template', 'roles', 'device_types', 'sites',
+            'match_tags', 'number_source', 'number_digits', 'number_first', 'number_last', 'fill_gaps', 'number_scope',
             'enforcement', 'description', 'tags', 'created', 'last_updated',
         )
         default_columns = (
-            'pk', 'name', 'enabled', 'priority', 'object_type', 'template', 'roles', 'device_types', 'sites', 'match_tags',
-            'enforcement',
+            'pk', 'name', 'enabled', 'priority', 'object_type', 'template', 'roles', 'device_types', 'sites',
+            'match_tags', 'enforcement',
         )
 
 

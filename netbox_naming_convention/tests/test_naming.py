@@ -248,9 +248,11 @@ class NamingTests(NetBoxData, TestCase):
         self.assertIsNone(self.device(rack=self.jk8, serial='ABC').name)
         self.assertEqual(self.device(rack=self.jk8, serial='FOC1').name, 'FITASWI001_JK8')
 
-    def test_advanced_condition_cannot_read_users(self):
+    def test_advanced_condition_cannot_read_private_data(self):
         secret = {'journal_entries__created_by__password__startswith': 'pbkdf2'}
-        for constraint in (secret, {'nonsense__exact': 1}):
+        data_source = {'config_template__data_source__parameters__contains': 'password'}
+        webhook = {'role__tags__object_types__event_rules__name': 'x'}
+        for constraint in (secret, data_source, webhook, {'nonsense__exact': 1}):
             self.switches.constraint = constraint
             with self.assertRaises(ValidationError) as caught:
                 self.switches.full_clean()
@@ -299,6 +301,12 @@ class NumberFromIPTests(NetBoxData, TestCase):
         device.save()
         device.refresh_from_db()
         self.assertEqual(device.name, 'fitaswi007')
+
+    def test_typed_name_accepted_before_the_primary_ip_is_set(self):
+        NamingRule.objects.update(enforcement=EnforcementChoices.REFUSE)
+        self.assertEqual(self.device(name='fitaswi006').name, 'fitaswi006')
+        with self.assertRaises(ValidationError):
+            self.device(name='other006')
 
     def test_same_number_twice_is_refused(self):
         self.add_primary(self.device(), '192.168.10.6/24')
