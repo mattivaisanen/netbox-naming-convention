@@ -49,6 +49,9 @@ New:
 
 Fixed:
 
+- Changing what a rule names (say from devices to racks) on the rule form
+  kept the old kind's conditions, such as device roles, out of sight. The
+  API then refused every edit of the rule. They are now cleared.
 - *Rename selected to the suggested names* on a rule page had no
   checkboxes to select with.
 - With two rules on the same priority, the one first by name won, even

@@ -163,6 +163,15 @@ class NamingRuleForm(NetBoxModelForm):
         for name in self.IP_ONLY if source == NumberSourceChoices.SEQUENCE else self.SEQUENCE_ONLY:
             del self.fields[name]
 
+    def _save_m2m(self):
+        super()._save_m2m()
+        # Conditions of another object type are not on the form, so Django
+        # leaves them alone. Clear them, or a rule changed from devices to
+        # racks keeps its device roles (and the API refuses to edit it).
+        for name in NamingRule.CONDITION_FIELDS:
+            if name not in self.kind.condition_fields:
+                getattr(self.instance, name).clear()
+
     def clean_object_type(self):
         return self.cleaned_data.get('object_type') or DEVICE.key
 

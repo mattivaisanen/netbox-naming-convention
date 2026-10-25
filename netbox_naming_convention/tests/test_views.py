@@ -131,6 +131,17 @@ class ViewTests(NetBoxData, TestCase):
         self.assertNotContains(page, 'id="id_skip_numbers"')
         self.assertNotContains(page, 'id="id_fill_gaps"')
 
+    def test_changing_what_a_rule_names_drops_conditions_it_has_no_use_for(self):
+        response = self.client.post(reverse(URL + 'namingrule_edit', args=[self.switches.pk]), {
+            'name': 'Tampere racks', 'template': 'R{n}', 'priority': 100, 'enabled': 'on',
+            'object_type': 'rack', 'sites': [self.tampere.pk], 'number_source': 'sequence', 'number_digits': 2,
+            'number_first': 1, 'number_scope': 'shared', 'enforcement': 'warn', 'tag_match': 'all',
+            'required_values': ['site'],
+        })
+        self.assertEqual(response.status_code, 302, response.content[:3000])
+        self.assertFalse(self.switches.roles.exists())  # racks have no device roles
+        self.assertEqual(list(self.switches.sites.all()), [self.tampere])
+
     def test_ip_rule_form_saves_without_the_sequence_fields(self):
         response = self.client.post(reverse(URL + 'namingrule_add'), {
             'name': 'By IP', 'template': 'sw{n}', 'priority': 100, 'enabled': 'on', 'roles': [self.router.pk],
