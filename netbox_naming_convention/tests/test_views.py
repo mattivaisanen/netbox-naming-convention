@@ -62,6 +62,14 @@ class ViewTests(NetBoxData, TestCase):
         self.assertContains(page, "var MODE = 'edit'")
         self.assertNotContains(self.client.get(reverse('dcim:site_add')), 'var MODE')
 
+    def test_vm_form_helper_survives_the_form_being_redrawn(self):
+        # Choosing a VM type redraws the form's fields through HTMX; the
+        # helper must find the new name field (checked in a browser too).
+        self.rule(object_type='virtualmachine', template='VM{n}', name='VMs')
+        page = self.client.get(reverse('virtualization:virtualmachine_add'))
+        self.assertContains(page, "var TYPE = 'virtualmachine'")
+        self.assertContains(page, "addEventListener('htmx:afterSettle'")
+
     def test_device_form_helper_can_be_turned_off(self):
         plugins_config = {**settings.PLUGINS_CONFIG, 'netbox_naming_convention': {
             **settings.PLUGINS_CONFIG.get('netbox_naming_convention', {}), 'device_form': False,
