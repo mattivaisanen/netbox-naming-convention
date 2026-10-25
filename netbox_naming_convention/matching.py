@@ -18,7 +18,10 @@ from django.db.models import Manager
 from .kinds import DEVICE, kind_of, prepare
 from .models import NamingRule, TagMatchChoices
 
-__all__ = ('find_rule', 'rule_matches', 'object_tag_slugs', 'rules_queryset', 'ordered_rules', 'rule_objects')
+__all__ = (
+    'find_rule', 'rule_matches', 'object_tag_slugs', 'rules_queryset', 'ordered_rules', 'rule_objects',
+    'related_object',
+)
 
 _LOOKUPS = {
     'exact', 'iexact', 'in', 'isnull', 'gt', 'gte', 'lt', 'lte',
@@ -55,7 +58,7 @@ def _with_ancestors(obj):
     return pks
 
 
-def _related(device, name):
+def related_object(device, name):
     """A foreign key of the device, or None (also when the id points nowhere)."""
     if getattr(device, f'{name}_id', None) is None:
         return None
@@ -86,17 +89,20 @@ def object_tag_slugs(device):
     return set()
 
 
-#: Models an advanced condition may not look into: users (their passwords),
-#: their API tokens and preferences. Which rule names a device shows on every
-#: device form, so a condition such as
+#: Apps and models an advanced condition may not look into. Which rule names
+#: an object shows on its form and in the rule preview, so a condition such as
 #: journal_entries__created_by__password__startswith would let anyone who may
-#: edit rules read a password hash one character at a time.
-_PRIVATE_MODELS = {'users.user', 'users.token', 'users.userconfig'}
+#: edit rules read a secret one character at a time. Blocked: users, tokens
+#: and permissions (users, auth), data sources with their credentials and the
+#: change log (core), content types (they lead to every other model) and
+#: webhooks with their secrets.
+_PRIVATE_APPS = {'auth', 'users', 'core', 'contenttypes', 'sessions'}
+_PRIVATE_MODELS = {'extras.webhook', 'extras.eventrule'}
 
 
 def _is_private(model):
     return model is not None and (
-        model._meta.label_lower in _PRIVATE_MODELS or model._meta.app_label == 'auth'
+        model._meta.app_label in _PRIVATE_APPS or model._meta.label_lower in _PRIVATE_MODELS
     )
 
 
@@ -142,7 +148,7 @@ def _walk(value, path):
 def constraint_errors(constraint, kind=DEVICE):
     """
     Keys of an advanced condition that name no field of the kind's model, or
-    reach users (see _PRIVATE_MODELS), for the rule form.
+    reach private data (see _PRIVATE_APPS), for the rule form.
     """
     filters = constraint if isinstance(constraint, list) else [constraint]
     errors = []
@@ -164,7 +170,8 @@ def constraint_errors(constraint, kind=DEVICE):
                     errors.append(f'"{key}": {model._meta.verbose_name} has no field "{step}".')
                     break
                 if _is_private(field.related_model):
-                    errors.append(f'"{key}": users and their tokens can\'t be used in a condition.')
+                    private = field.related_model._meta.verbose_name_plural
+                    errors.append(f'"{key}": {private} can\'t be used in a condition.')
                     break
                 if not (field.is_relation or step == parts[-1]):
                     errors.append(f'"{key}": "{step}" is a value, not a related object.')
@@ -268,7 +275,7 @@ def _condition_matches(condition, pks, obj):
     """Whether `obj`'s value at condition.path is one of `pks` (or a child of one)."""
     value = obj
     for step in condition.path:
-        value = _related(value, step)
+        value = related_object(value, step)
         if value is None:
             return False
     found = _with_ancestors(value) if condition.tree else {value.pk}
@@ -322,13 +329,17 @@ def find_rule(obj, rules=None, tag_slugs=None):
 
 
 def _expand_tree(model, pks):
-    """pks plus every descendant of them (works for any nesting backend)."""
-    if not pks:
-        return set()
+    """pks plus every descendant of them, in one query (works for any nesting backend)."""
+    children = {}
+    for pk, parent in model.objects.values_list('pk', 'parent_id'):
+        children.setdefault(parent, []).append(pk)
     out = set()
-    for obj in model.objects.all():
-        if _with_ancestors(obj) & pks:
-            out.add(obj.pk)
+    todo = list(pks)
+    while todo:
+        pk = todo.pop()
+        if pk not in out:
+            out.add(pk)
+            todo.extend(children.get(pk, ()))
     return out
 
 

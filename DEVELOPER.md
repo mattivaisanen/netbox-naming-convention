@@ -25,7 +25,7 @@ serializer and migration) and its values in `reference.VALUES`.
 an object on its form as it will be saved: a virtual machine without a site
 gets its cluster's (or host device's) site, as `VirtualMachine.save()`
 does. `kinds.prepare(obj)` runs it at the start of `find_rule()` and
-`naming._render()`, and changes only empty fields.
+`naming.render_name()`, and changes only empty fields.
 
 On the add forms the name stays locked while nothing a rule could match on
 is chosen yet (`kindsSet()` in `name_form.html`): a device needs role and
@@ -70,15 +70,18 @@ Roles, regions, locations and site groups match their ancestors by walking
 trees. The advanced condition is evaluated in memory with
 the common lookups, like change-approval's `matching.py`. Each step must be
 a model field (`_meta.get_field()`, so no private attributes or methods),
-and users, tokens and user preferences (`matching._PRIVATE_MODELS`) are never
-followed: which rule matches shows on every device form, so a condition
-could otherwise read a password hash. `constraint_errors()` refuses such
-keys and unknown fields when a rule is saved.
+and private data is never followed (`matching._PRIVATE_APPS` and
+`_PRIVATE_MODELS`: users, tokens and permissions, data sources and the
+change log, content types, webhooks and event rules): which rule matches
+shows on every device form and in the rule preview, so a condition could
+otherwise read a password hash or a data source's credentials.
+`constraint_errors()` refuses such keys and unknown fields when a rule is
+saved.
 
 ## Waiting for values
 
 `NamingRule.required_values` lists fields (`RequiredValueChoices`, limited
-to `Kind.wait_for`) the rule needs besides its template's values. `naming._render()` puts the
+to `Kind.wait_for`) the rule needs besides its template's values. `naming.render_name()` puts the
 empty ones first in `missing`, so they behave exactly like an empty template
 value: the form waits, a save leaves the device unnamed (or is refused with
 enforcement *refuse*; for virtual machines and racks, which must have a
@@ -92,7 +95,7 @@ label to `id_<field>-ts-control`).
 ## Filters for the whole name
 
 `NamingRule.name_filters` (`template.parse_name_filters()`, limited to
-`NAME_FILTERS`) is applied by `naming._render()` to the rendered prefix and
+`NAME_FILTERS`) is applied by `naming.render_name()` to the rendered prefix and
 suffix separately, so the number is never touched and series, used numbers
 and `follows()` all see the filtered text. `filter_name()` leaves the
 number marker and `<missing>` placeholders of `Rendered.pattern` alone.

@@ -13,7 +13,7 @@ import re
 from django.utils.translation import gettext as _
 
 from .matching import find_rule, rule_matches, rule_objects, rules_queryset
-from .naming import _render, suggest
+from .naming import render_name, suggest
 
 #: Objects of the rule shown in the preview.
 PREVIEW_LIMIT = 10
@@ -90,7 +90,7 @@ def preview(form, user, obj=None):
         return {'errors': errors}
     rule = rule_draft(form)
     model = rule.kind.model
-    out, _has_number = _render(obj or model(), rule)
+    out, _has_number = render_name(obj or model(), rule)
     if out.error:
         return {'errors': [out.error]}
     visible = model.objects.restrict(user, 'view')

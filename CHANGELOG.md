@@ -49,6 +49,18 @@ New:
 
 Fixed:
 
+- Security: an advanced condition could look into data sources (their
+  credentials), webhooks and their secrets, object permissions and the
+  change log, so someone who may edit rules could read them one character
+  at a time through the rule preview. Such conditions are now refused.
+- A rule page listed and counted devices, virtual machines and racks the
+  user may not view. It now shows only those they may.
+- A rule that reads its number from the primary IP and refuses names that
+  don't fit refused a correctly typed name on a new device, because a new
+  device has no primary IP yet. The name is now checked by its shape until
+  the device has one.
+- The rule page and the preview were slow for rules with regions,
+  locations or roles that have many children.
 - The virtual machine form showed no name once a virtual machine type was
   chosen: NetBox redraws the form then, and the name hint stayed on the old
   field.

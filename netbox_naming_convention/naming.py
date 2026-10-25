@@ -22,14 +22,18 @@ from django.utils.translation import gettext as _
 from netbox.context import current_request
 
 from .kinds import prepare
-from .matching import _related, find_rule
+from .matching import find_rule, related_object
 from .models import AssignedName, NamingSeries, NumberSourceChoices
 from .numbering import (
     NumberError, is_skipped, name_regex, next_number, number_from_ip, series_key, used_numbers,
 )
 from .template import NUMBER, TemplateError, filter_name
 
-__all__ = ('Suggestion', 'suggest', 'assign', 'check_typed_name', 'follows', 'resolve', 'mark_auto', 'is_auto')
+__all__ = (
+    'Suggestion', 'suggest', 'assign', 'remember', 'check_typed_name', 'follows', 'resolve', 'render_name',
+    'number_in_name', 'mark_auto', 'is_auto', 'unmark_auto',
+)
+
 
 @dataclass
 class Suggestion:
@@ -71,7 +75,7 @@ def resolve(obj, path, kind):
     """The value of a template path (see template.py) for `obj` of `kind`, or ''."""
     root, *rest = path
     for step in kind.roots[root]:
-        obj = _related(obj, step)
+        obj = related_object(obj, step)
         if obj is None:
             return ''
     i = 0
@@ -92,17 +96,17 @@ def resolve(obj, path, kind):
 
 
 def _primary_ip(obj):
-    return _related(obj, 'primary_ip4') or _related(obj, 'primary_ip6')
+    return related_object(obj, 'primary_ip4') or related_object(obj, 'primary_ip6')
 
 
 def _has_value(obj, key):
     """Whether a field the rule waits for (RequiredValueChoices) is set."""
     if obj._meta.get_field(key).is_relation:
-        return _related(obj, key) is not None
+        return related_object(obj, key) is not None
     return bool(getattr(obj, key, None))
 
 
-def _render(obj, rule):
+def render_name(obj, rule):
     """(Suggestion with prefix/suffix/series/missing filled in, has_number)."""
     out = Suggestion(rule=rule)
     try:
@@ -127,7 +131,7 @@ def _render(obj, rule):
     return out, template.has_number
 
 
-def _number_of(name, prefix, suffix, scope):
+def number_in_name(name, prefix, suffix, scope):
     """The number in an existing name of this series, or None."""
     if not name:
         return None
@@ -185,7 +189,7 @@ def _pick(out, rule, obj, high_water, keep_current, taken=None):
         # gave it, while nobody else has it.
         earlier = AssignedName.of(obj).exclude(name=obj.name or '')
         for name in [obj.name, *earlier.values_list('name', flat=True)]:
-            current = _number_of(name, out.prefix, out.suffix, scope)
+            current = number_in_name(name, out.prefix, out.suffix, scope)
             if (current is not None and current not in used and rule.number_first <= current <= rule.last_number
                     and not is_skipped(current, rule.skip_ranges)):
                 out.kept_number = True
@@ -213,7 +217,7 @@ def suggest(obj, rule=None, *, keep_current=True, taken=None):
     rule = rule or find_rule(obj)
     if rule is None:
         return Suggestion()
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if out.error or out.missing:
         return out
     if not has_number:
@@ -237,7 +241,7 @@ def assign(obj, rule=None):
     rule = rule or find_rule(obj)
     if rule is None:
         return Suggestion()
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if out.error or out.missing:
         return out
     if not has_number:
@@ -266,10 +270,10 @@ def remember(obj, rule=None):
     rule = rule or find_rule(obj)
     if rule is None or rule.number_source != NumberSourceChoices.SEQUENCE:
         return
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if not has_number or out.error or out.missing:
         return
-    number = _number_of(obj.name, out.prefix, out.suffix, rule.number_scope)
+    number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope)
     # A number outside the rule's range was never the rule's to hand out (and
     # may not even fit the database column, as in SW99999999999).
     if number is None or not rule.number_first <= number <= rule.last_number:
@@ -283,7 +287,7 @@ def follows(obj, rule=None):
     rule = rule or find_rule(obj)
     if rule is None:
         return None, None
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if out.error:
         return rule, False
     if out.missing and out.missing != ['primary IP']:
@@ -291,13 +295,17 @@ def follows(obj, rule=None):
     name = obj.name or ''
     if not has_number:
         return rule, name.lower() == out.prefix.lower()
-    number = _number_of(name, out.prefix, out.suffix, 'name')
+    number = number_in_name(name, out.prefix, out.suffix, 'name')
     if number is None or len(name) - len(out.prefix) - len(out.suffix) < rule.number_digits:
         return rule, False
     if rule.number_source == NumberSourceChoices.IP:
         ip = _primary_ip(obj)
+        if ip is None:
+            # No primary IP yet (as on every new device): only the shape of
+            # the name can be checked.
+            return rule, True
         try:
-            return rule, ip is not None and number_from_ip(rule.ip_pattern, ip.address) == number
+            return rule, number_from_ip(rule.ip_pattern, ip.address) == number
         except NumberError:
             return rule, False
     return rule, rule.number_first <= number <= rule.last_number
@@ -308,18 +316,18 @@ def check_typed_name(obj, rule):
     For rules that refuse names that don't fit: an error message for a name
     typed by hand, or None when it is fine.
     """
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if out.error:
         return out.error
     if out.missing and out.missing != ['primary IP']:
         return _('The rule "{rule}" needs a value for: {missing}.').format(rule=rule, missing=', '.join(out.missing))
     _rule, fits = follows(obj, rule)
-    example = suggest(obj, rule)
     if not fits:
+        example = suggest(obj, rule)
         hint = _(' Leave the name empty to get {name}.').format(name=example.name) if example.ready else ''
         return _('The name does not follow the rule "{rule}".').format(rule=rule) + hint
     if has_number:
-        number = _number_of(obj.name, out.prefix, out.suffix, 'name')
+        number = number_in_name(obj.name, out.prefix, out.suffix, 'name')
         if is_skipped(number, rule.skip_ranges):
             return _('Number {number} is never handed out by the rule "{rule}".').format(
                 number=rule.format_number(number), rule=rule,

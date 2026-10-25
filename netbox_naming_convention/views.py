@@ -16,7 +16,7 @@ from . import filtersets, forms, preview, reference, tables
 from .kinds import KINDS
 from .matching import find_rule, ordered_rules, rule_objects, rules_queryset
 from .models import NamingRule, NamingSeries
-from .naming import _number_of, _render, follows, suggest
+from .naming import follows, number_in_name, render_name, suggest
 from .report import GROUPS, REPORT_LIMIT, REPORT_SHOWN, build_report, related_fields
 
 #: Most objects a rule page looks at.
@@ -33,19 +33,23 @@ class NamingRuleListView(generic.ObjectListView):
     filterset_form = forms.NamingRuleFilterForm
 
 
-def rule_overview(rule):
-    """The series a rule's objects are in, and the objects that don't follow it."""
-    objects = rule_objects(rule, limit=RULE_PAGE_LIMIT)
+def rule_overview(rule, user):
+    """
+    The series a rule's objects are in, and the objects that don't follow
+    it. Only objects `user` may view are listed and counted.
+    """
+    visible = rule.kind.model.objects.restrict(user, 'view')
+    objects = rule_objects(rule, limit=RULE_PAGE_LIMIT, objects=visible)
     series = OrderedDict()
     drifted = []
     for obj in objects:
-        out, has_number = _render(obj, rule)
+        out, has_number = render_name(obj, rule)
         if has_number and out.series and not out.error:
             entry = series.setdefault(out.series, {
                 'key': out.series, 'prefix': out.prefix, 'suffix': out.suffix, 'count': 0, 'highest': None,
                 'example': obj,
             })
-            number = _number_of(obj.name, out.prefix, out.suffix, rule.number_scope)
+            number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope)
             if number is not None:
                 entry['count'] += 1
                 entry['highest'] = max(entry['highest'] or 0, number)
@@ -77,16 +81,15 @@ class NamingRuleView(generic.ObjectView):
 
     def get_extra_context(self, request, instance):
         kind = instance.kind
-        overview = rule_overview(instance)
+        overview = rule_overview(instance, request.user)
         table = tables.RuleObjectTable(overview['drifted'][:DRIFTED_SHOWN], kind, orderable=False)
-        app_label, model_name = kind.model_label.split('.')
         conditions = [
             (instance._meta.get_field(name).verbose_name, getattr(instance, name).all())
             for name in kind.condition_fields if name != 'match_tags'
         ]
         return {
             **overview, 'kind': kind, 'conditions': conditions, 'drifted_table': table,
-            'drifted_count': len(overview['drifted']), 'can_rename': request.user.has_perm(f'{app_label}.change_{model_name}'),
+            'drifted_count': len(overview['drifted']), 'can_rename': request.user.has_perm(kind.permission('change')),
         }
 
 
@@ -220,11 +223,10 @@ class NamingReportView(LoginRequiredMixin, View):
         objects = kind.model.objects.restrict(request.user, 'view')
         result = build_report(kind, objects, show)
         table = tables.ReportObjectTable(result.shown, kind, orderable=False)
-        app_label, model_name = kind.model_label.split('.')
         return render(request, 'netbox_naming_convention/report.html', {
             'report': result, 'kind': kind, 'kinds': KINDS.values(), 'show': show, 'table': table,
             'limit': REPORT_LIMIT, 'shown_limit': REPORT_SHOWN,
-            'can_rename': show in ('drifted', 'unnamed') and request.user.has_perm(f'{app_label}.change_{model_name}'),
+            'can_rename': show in ('drifted', 'unnamed') and request.user.has_perm(kind.permission('change')),
         })
 
 

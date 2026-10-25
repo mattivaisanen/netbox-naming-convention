@@ -7,7 +7,7 @@ from django.urls import reverse
 from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
 
-from core.models import ObjectChange
+from core.models import ObjectChange, ObjectType
 
 from .. import reference, template
 from ..kinds import KINDS
@@ -37,6 +37,20 @@ class ViewTests(NetBoxData, TestCase):
         self.assertContains(page, 'FITASWI002_JK8')  # next name of the series
         self.assertContains(page, 'old-switch')  # does not follow the rule
         self.assertEqual(self.client.get(reverse(URL + 'namingrule_add')).status_code, 200)
+
+    def test_rule_page_lists_only_objects_the_user_may_view(self):
+        from users.models import ObjectPermission
+
+        Device.objects.create(name='hidden-switch', site=self.tampere, role=self.access, device_type=self.c9300)
+        user = get_user_model().objects.create(username='rules-only')
+        permission = ObjectPermission.objects.create(name='View rules', actions=['view'])
+        permission.object_types.add(ObjectType.objects.get_for_model(NamingRule))
+        permission.users.add(user)
+        self.client.force_login(user)
+        with override_settings(EXEMPT_VIEW_PERMISSIONS=[]):
+            page = self.client.get(self.switches.get_absolute_url())
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, 'hidden-switch')
 
     def test_rule_form(self):
         response = self.client.post(reverse(URL + 'namingrule_add'), {
