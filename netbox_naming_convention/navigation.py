@@ -9,7 +9,7 @@ menu = PluginMenu(
         (_('Naming'), (
             PluginMenuItem(
                 link='plugins:netbox_naming_convention:namingrule_list',
-                link_text=_('Naming rules'),
+                link_text=_('Naming Rules'),
                 permissions=['netbox_naming_convention.view_namingrule'],
                 buttons=(
                     PluginMenuButton(
@@ -22,7 +22,7 @@ menu = PluginMenu(
             ),
             PluginMenuItem(
                 link='plugins:netbox_naming_convention:report',
-                link_text=_('Naming report'),
+                link_text=_('Naming Report'),
             ),
         )),
     ),

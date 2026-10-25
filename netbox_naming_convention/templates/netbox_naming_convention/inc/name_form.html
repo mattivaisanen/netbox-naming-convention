@@ -177,8 +177,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function lock(on) {
     input.readOnly = on;
-    input.style.backgroundColor = on ? 'var(--tblr-secondary-bg, #e5e7eb)' : '';
-    input.style.color = on ? 'var(--tblr-secondary, #6b7280)' : '';
+    input.style.backgroundColor = on ? 'var(--tblr-secondary-bg)' : '';
+    input.style.color = on ? 'var(--tblr-secondary)' : '';
     if (MODE === 'add') {
       if (on && !marker.parentNode) { form.appendChild(marker); }
       if (!on && marker.parentNode) { marker.parentNode.removeChild(marker); }

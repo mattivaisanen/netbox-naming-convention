@@ -58,7 +58,7 @@ Everything below works the same for devices, virtual machines and racks;
   Tick some of them and *Rename selected to the suggested names* shows old
   and new names; confirming sends them through NetBox's own device import,
   so permissions, the change log and approvals work as for any bulk edit.
-- **Naming report** (*Naming → Naming report*): for devices, virtual
+- **Naming report** (*Naming → Naming Report*): for devices, virtual
   machines and racks, how many have a name that doesn't follow their rule,
   have no name yet, aren't named by any rule, or follow their rule, with a
   count per rule. Each group lists its objects (the first 100) with the
@@ -68,11 +68,11 @@ Everything below works the same for devices, virtual machines and racks;
 
 ## Requirements
 
-- NetBox **4.7** (tested with 4.7.0 and 4.7.3). NetBox refuses to load the
-  plugin on older versions.
+- NetBox **4.7 or later** (tested with 4.7.0 and 4.7.3). NetBox refuses to
+  load the plugin on older versions.
 - No other plugins. Works with
   [netbox-change-approval](https://github.com/mattivaisanen/netbox-change-approval)
-  when it is installed (tested with 0.3.3).
+  when it is installed (tested with 0.4.0).
 
 ## Installation
 
@@ -115,7 +115,7 @@ and restart NetBox.
 
 ## Rules
 
-Under **Naming → Naming rules**. Rules are checked by priority (lowest
+Under **Naming → Naming Rules**. Rules are checked by priority (lowest
 first); the first enabled rule that matches a device names it. On the same
 priority, the rule with more kinds of conditions is checked first, so a rule
 for switches tagged `lab` wins over one for all switches; after that, by
@@ -252,4 +252,4 @@ given) are never gated.
 
 ## License
 
-Apache 2.0, see [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).

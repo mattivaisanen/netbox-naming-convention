@@ -14,7 +14,7 @@ PLUGINS_CONFIG = {
 | --- | --- | --- | --- |
 | `device_form` | bool | `True` | On the device, virtual machine and rack add forms, lock and gray out the name and fill it in from the matching rule, with a button to type a name instead; on the edit form, gray out a name that follows its rule and offer *Suggest again*. `False` leaves the forms as NetBox has them. Device names are still filled in on save either way; virtual machines and racks need a name on their forms then. |
 
-Everything else is set per rule under **Naming → Naming rules** (see the
+Everything else is set per rule under **Naming → Naming Rules** (see the
 README).
 
 ## Permissions

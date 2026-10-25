@@ -7,7 +7,7 @@
 <div class="row mb-3">
   <div class="col col-12 col-xl-6">
     <div class="card">
-      <h2 class="card-header">{% trans "Naming rule" %}</h2>
+      <h2 class="card-header">{% trans "Naming Rule" %}</h2>
       <table class="table table-hover attr-table">
         <tr><th scope="row">{% trans "Name" %}</th><td>{{ object.name }}</td></tr>
         <tr><th scope="row">{% trans "Names" %}</th><td>{% badge object.get_object_type_display bg_color=object.get_object_type_color %}</td></tr>
@@ -71,7 +71,7 @@
       {% if truncated %}<div class="card-footer text-muted">{% blocktrans with kinds=kind.label_plural %}Only the first 2000 {{ kinds }} are counted.{% endblocktrans %}</div>{% endif %}
     </div>
     <div class="card">
-      <h2 class="card-header">{% blocktrans with n=drifted_count %}Not following this rule ({{ n }}){% endblocktrans %}</h2>
+      <h2 class="card-header">{% blocktrans with n=drifted_count %}Not Following This Rule ({{ n }}){% endblocktrans %}</h2>
       {% if drifted_count %}
         <form action="{% url 'plugins:netbox_naming_convention:namingrule_rename' pk=object.pk %}" method="post">
           {% csrf_token %}
