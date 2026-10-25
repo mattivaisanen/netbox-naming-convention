@@ -61,6 +61,9 @@ Fixed:
   the device has one.
 - The rule page and the preview were slow for rules with regions,
   locations or roles that have many children.
+- The virtual machine form showed no name once a virtual machine type was
+  chosen: NetBox redraws the form then, and the name hint stayed on the old
+  field.
 - *Rename selected to the suggested names* on a rule page had no
   checkboxes to select with.
 - With two rules on the same priority, the one first by name won, even

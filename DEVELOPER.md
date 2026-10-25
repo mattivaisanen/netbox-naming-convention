@@ -183,6 +183,11 @@ always produce one), with the session cookie and CSRF token. A field on
 the form that is empty is sent as `null`, so the edit form's suggestion
 does not fall back to the device's saved value.
 
+Some NetBox forms redraw their fields through HTMX when a select changes
+(the virtual machine form's *Type*). The redraw puts in a new `id_name`
+input, so the script builds its buttons and note again on
+`htmx:afterSettle` (`attach()`), keeping its state.
+
 - Add: the field starts locked (read-only and grayed)
   before anything is chosen, so nobody types a name the rule would have
   given; it says it is filled in once the fields every rule of that kind
