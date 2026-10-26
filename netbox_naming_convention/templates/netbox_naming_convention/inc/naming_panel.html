@@ -10,7 +10,7 @@
         {% else %}<span class="badge text-bg-{% if rule.enforcement == 'off' %}gray{% else %}yellow{% endif %}">{% trans "does not follow the rule" %}</span>{% endif %}
       </td>
     </tr>
-    {% if assigned %}<tr><th scope="row">{% trans "Given by" %}</th><td>{% badge assigned.get_how_display bg_color=assigned.get_how_color %} <span class="text-muted small">{{ assigned.created|isodatetime:"minutes" }}</span></td></tr>{% endif %}
+    {% if assigned %}<tr><th scope="row">{% trans "Given by" %}</th><td>{% badge assigned.get_how_display bg_color=assigned.get_how_color %} <span class="text-secondary small">{{ assigned.created|isodatetime:"minutes" }}</span></td></tr>{% endif %}
     {% if suggestion.series %}<tr><th scope="row">{% trans "Series" %}</th><td class="font-monospace">{{ suggestion.prefix }}{% if rule.number_scope == 'name' %}#{{ suggestion.suffix }}{% endif %}</td></tr>{% endif %}
     {% if number is not None %}<tr><th scope="row">{% trans "Number" %}</th><td>{{ number_text }}</td></tr>{% endif %}
     {% if not fits %}
@@ -18,7 +18,7 @@
       <th scope="row">{% trans "Suggested name" %}</th>
       <td>
         {% if suggestion.ready %}<span class="font-monospace">{{ suggestion.name }}</span>
-        {% elif suggestion.missing %}<span class="text-muted">{% blocktrans with m=suggestion.missing|join:", " %}waiting for: {{ m }}{% endblocktrans %}</span>
+        {% elif suggestion.missing %}<span class="text-secondary">{% blocktrans with m=suggestion.missing|join:", " %}waiting for: {{ m }}{% endblocktrans %}</span>
         {% else %}<span class="text-danger">{{ suggestion.error }}</span>{% endif %}
       </td>
     </tr>
