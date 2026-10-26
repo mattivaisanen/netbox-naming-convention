@@ -81,8 +81,12 @@ environment (on a standard install, `source /opt/netbox/venv/bin/activate`
 first):
 
 ```bash
-pip install git+https://github.com/mattivaisanen/netbox-naming-convention.git
+pip install git+https://github.com/mattivaisanen/netbox-naming-convention.git@v0.2.0
 ```
+
+Releases are listed under
+[Releases](https://github.com/mattivaisanen/netbox-naming-convention/releases);
+leave out `@v0.2.0` to install the latest code from `main`.
 
 Add it to `configuration.py`:
 
@@ -140,7 +144,6 @@ name. Set different priorities when you want a fixed order.
 | Fill gaps | Running numbers only. On: the lowest number no device has now, including those of deleted devices. Off: one more than the highest number ever handed out, so gaps are never refilled (a name with a free number can still be typed by hand). The plugin can't tell a gap left on purpose from one left by accident: retire numbers on purpose with *Numbers never handed out*, or keep the retired device in NetBox (its number counts as used while it exists). |
 | Number scope | *Shared*: the number counts per text before it, so racks share one run (`AMS1-SW014-R01`, `AMS1-SW015-R02`). *Whole name*: each full name counts on its own (`AMS1-SW001-R01`, `AMS1-SW001-R02`). |
 | IP pattern | *From primary IP* only: a mask such as `*.*.*.N` (the octet marked N is the number) or a regular expression with one group, such as `\.([0-9]+)$`. |
-
 | Enforcement | *Off*, *Warn* (default) or *Refuse*, see above. |
 
 The rule form shows only the number fields that apply to the number source
