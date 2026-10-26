@@ -1,7 +1,7 @@
 {% extends 'base/layout.html' %}
 {% load i18n %}
 
-{% block title %}{% trans "Name template reference" %}{% endblock %}
+{% block title %}{% trans "Name Template Reference" %}{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -15,7 +15,7 @@
       {% endblocktrans %}
     </p>
     <div class="card">
-      <h2 class="card-header">{% trans "Text and number" %}</h2>
+      <h2 class="card-header">{% trans "Text and Number" %}</h2>
       <table class="table table-hover attr-table">
         {% for syntax, text in other %}
         <tr><th scope="row" class="font-monospace">{{ syntax }}</th><td>{{ text }}</td></tr>

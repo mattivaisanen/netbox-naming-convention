@@ -8,7 +8,7 @@
   <div class="col col-12 col-xl-8">
     {% if rows %}
     <div class="card">
-      <h2 class="card-header">{% blocktrans with n=rows|length %}New names ({{ n }}){% endblocktrans %}</h2>
+      <h2 class="card-header">{% blocktrans with n=rows|length %}New Names ({{ n }}){% endblocktrans %}</h2>
       <table class="table table-hover">
         <thead><tr><th>{{ kind.label }}</th><th>{% trans "Now" %}</th><th></th><th>{% trans "New name" %}</th></tr></thead>
         {% for obj, name in rows %}
@@ -24,7 +24,7 @@
     {% endif %}
     {% if skipped %}
     <div class="card">
-      <h2 class="card-header">{% trans "Not renamed" %}</h2>
+      <h2 class="card-header">{% trans "Not Renamed" %}</h2>
       <table class="table table-hover">
         {% for obj, reason in skipped %}
         <tr><td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td><td class="text-muted">{{ reason }}</td></tr>

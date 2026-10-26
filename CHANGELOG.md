@@ -4,7 +4,7 @@
 
 New:
 
-- Naming report (*Naming → Naming report*): every device, virtual machine
+- Naming report (*Naming → Naming Report*): every device, virtual machine
   or rack whose name doesn't follow its rule, that has no name yet, or that
   no rule names, with the suggested names and *Rename selected*.
 - Rules can name virtual machines and racks too. A rule's *Names* field
@@ -46,6 +46,14 @@ New:
 - The name hint on the device form says what the convention is, such as
   "Naming convention for "Switches" is AMS1-SW###-R02, suggested name:
   AMS1-SW014-R02", instead of only the rule's name.
+
+Changed:
+
+- Menu items, page titles and card titles use Title Case, as NetBox does
+  (*Naming Rules*, *Naming Report*).
+- The locked name field takes its gray from the NetBox theme only, so it
+  follows dark mode and custom themes.
+- Tested with netbox-change-approval 0.4.0.
 
 Fixed:
 
