@@ -27,7 +27,7 @@
         <tr><th scope="row">{{ label|capfirst }}</th><td>{% for x in values %}{{ x|linkify }}{% if not forloop.last %}, {% endif %}{% empty %}{{ ''|placeholder }}{% endfor %}</td></tr>
         {% endfor %}
         <tr><th scope="row">{% trans "Statuses" %}</th><td>{{ object.statuses|join:", "|placeholder }}</td></tr>
-        <tr><th scope="row">{% trans "Tags" %}</th><td>{% for tag in object.match_tags.all %}{% tag tag %}{% empty %}{{ ''|placeholder }}{% endfor %}{% if object.match_tags.all %} <span class="text-muted">({{ object.get_tag_match_display }})</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Tags" %}</th><td>{% for tag in object.match_tags.all %}{% tag tag %}{% empty %}{{ ''|placeholder }}{% endfor %}{% if object.match_tags.all %} <span class="text-secondary">({{ object.get_tag_match_display }})</span>{% endif %}</td></tr>
         <tr><th scope="row">{% trans "Advanced condition" %}</th><td>{% if object.constraint %}<pre class="mb-0">{{ object.constraint|json }}</pre>{% else %}{{ ''|placeholder }}{% endif %}</td></tr>
       </table>
     </div>
@@ -59,16 +59,16 @@
           <tr>
             <td class="font-monospace">{{ s.prefix }}{% if object.number_scope == 'name' %}#{{ s.suffix }}{% endif %}</td>
             <td>{{ s.count }}</td>
-            <td>{{ s.highest_text|placeholder }}{% if s.high_water and s.high_water > s.highest|default:0 %} <span class="text-muted">({% blocktrans with n=s.high_water %}{{ n }} handed out before{% endblocktrans %})</span>{% endif %}</td>
+            <td>{{ s.highest_text|placeholder }}{% if s.high_water and s.high_water > s.highest|default:0 %} <span class="text-secondary">({% blocktrans with n=s.high_water %}{{ n }} handed out before{% endblocktrans %})</span>{% endif %}</td>
             <td class="font-monospace">{{ s.next|placeholder }}</td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}No {{ kinds }} follow this rule yet.{% endblocktrans %}</div>
+      <div class="card-body text-secondary">{% blocktrans with kinds=kind.label_plural %}No {{ kinds }} follow this rule yet.{% endblocktrans %}</div>
       {% endif %}
-      {% if truncated %}<div class="card-footer text-muted">{% blocktrans with kinds=kind.label_plural %}Only the first 2000 {{ kinds }} are counted.{% endblocktrans %}</div>{% endif %}
+      {% if truncated %}<div class="card-footer text-secondary">{% blocktrans with kinds=kind.label_plural %}Only the first 2000 {{ kinds }} are counted.{% endblocktrans %}</div>{% endif %}
     </div>
     <div class="card">
       <h2 class="card-header">{% blocktrans with n=drifted_count %}Not Following This Rule ({{ n }}){% endblocktrans %}</h2>
@@ -83,7 +83,7 @@
           {% endif %}
         </form>
       {% else %}
-        <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}All {{ kinds }} of this rule follow it.{% endblocktrans %}</div>
+        <div class="card-body text-secondary">{% blocktrans with kinds=kind.label_plural %}All {{ kinds }} of this rule follow it.{% endblocktrans %}</div>
       {% endif %}
     </div>
   </div>

@@ -15,7 +15,7 @@
         <tr>
           <td><a href="{{ obj.get_absolute_url }}">{{ obj.pk }}</a></td>
           <td class="font-monospace text-danger">{{ obj.name|default:"—" }}</td>
-          <td class="text-muted px-0"><i class="mdi mdi-arrow-right"></i></td>
+          <td class="text-secondary px-0"><i class="mdi mdi-arrow-right"></i></td>
           <td class="font-monospace text-success">{{ name }}</td>
         </tr>
         {% endfor %}
@@ -27,7 +27,7 @@
       <h2 class="card-header">{% trans "Not Renamed" %}</h2>
       <table class="table table-hover">
         {% for obj, reason in skipped %}
-        <tr><td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td><td class="text-muted">{{ reason }}</td></tr>
+        <tr><td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td><td class="text-secondary">{{ reason }}</td></tr>
         {% endfor %}
       </table>
     </div>
@@ -39,7 +39,7 @@
       <input type="hidden" name="csv_delimiter" value=",">
       <input type="hidden" name="import_method" value="direct">
       <input type="hidden" name="_naming_rename" value="1">
-      <p class="text-muted">
+      <p class="text-secondary">
         {% trans "The names are saved through NetBox's import, like any bulk edit: with your permissions, in the change log, and through approval when netbox-change-approval is installed. A number someone takes in the meantime makes that row fail; open this page again for fresh names." %}
       </p>
       <div class="text-end">
