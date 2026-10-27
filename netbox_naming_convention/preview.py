@@ -19,7 +19,8 @@ from .naming import render_name, suggest
 PREVIEW_LIMIT = 10
 
 #: Fields of the rule form whose errors make the preview pointless.
-NAME_FIELDS = ('template', 'name_filters', 'ip_pattern', 'skip_numbers', 'number_digits', 'number_last')
+NAME_FIELDS = ('template', 'name_filters', 'ip_pattern', 'skip_numbers', 'number_digits', 'number_last',
+               'member_suffix')
 
 #: Stands in for the primary key of a rule not saved yet (Django needs one
 #: before many-to-many values can be read; no rule has 0).

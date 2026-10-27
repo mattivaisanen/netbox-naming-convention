@@ -11,7 +11,7 @@ from ipam.models import IPAddress
 from utilities.exceptions import AbortRequest
 
 from ..models import EnforcementChoices, NamingRule, NamingSeries, NumberScopeChoices, NumberSourceChoices
-from ..naming import suggest
+from ..naming import follows, suggest
 from .utils import NetBoxData
 
 
@@ -200,6 +200,24 @@ class NamingTests(NetBoxData, TestCase):
         with self.assertRaises(ValidationError) as caught:
             self.device(name='NLUTSWI005_RA9', rack=self.ra9)  # number already used
         self.assertIn('already used', str(caught.exception))
+
+    def test_stack_members_share_a_number(self):
+        self.switches.template = 'SW{n}'
+        self.switches.member_suffix = '-#'
+        self.switches.enforcement = EnforcementChoices.REFUSE
+        self.switches.fill_gaps = True
+        self.switches.number_first = 5
+        self.switches.save()
+        first = self.device(name='SW005-1')
+        self.device(name='SW005-2')  # another member of the same stack
+        self.assertTrue(follows(first)[1])
+        self.assertEqual(suggest(first).name, 'SW005-1')  # keeps its ending
+        self.assertEqual(self.device().name, 'SW006')  # 5 is used, not a gap
+        with self.assertRaises(ValidationError):
+            self.device(name='SW007-A')
+        self.switches.member_suffix = '#'
+        with self.assertRaises(ValidationError):
+            self.switches.full_clean()
 
     def test_warn_allows_any_name(self):
         self.assertEqual(self.device(name='whatever', rack=self.ra8).name, 'whatever')

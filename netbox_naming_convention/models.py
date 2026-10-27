@@ -256,6 +256,13 @@ class NamingRule(NetBoxModel):
         verbose_name=_('number scope'), max_length=10, choices=NumberScopeChoices,
         default=NumberScopeChoices.SHARED,
     )
+    member_suffix = models.CharField(
+        verbose_name=_('member suffix'), max_length=20, blank=True,
+        help_text=_(
+            'Optional. An ending a name may have after the number, for stack or cluster members. '
+            '# is one or more digits: -# lets SW005-1 and SW005-2 follow the rule, both as number 5.'
+        ),
+    )
     enforcement = models.CharField(
         verbose_name=_('enforcement'), max_length=10, choices=EnforcementChoices,
         default=EnforcementChoices.WARN,
@@ -373,6 +380,9 @@ class NamingRule(NetBoxModel):
             parse_skip(self.skip_numbers)
         except NumberError as e:
             errors['skip_numbers'] = str(e)
+        if self.member_suffix and (self.member_suffix[0] == '#' or self.member_suffix[0].isdigit()):
+            # SW005 + "#" would be SW0051: the number and the ending must be told apart.
+            errors['member_suffix'] = _('The member suffix must start with something other than a digit, such as -#.')
         if self.number_last is not None and self.number_last < self.number_first:
             errors['number_last'] = _('The last number must not be lower than the first.')
         if self.constraint is not None:

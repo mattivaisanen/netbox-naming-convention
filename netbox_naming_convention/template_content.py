@@ -29,7 +29,10 @@ class NamingPanel(PluginTemplateExtension):
             return ''
         _rule, fits = follows(obj, rule)
         result = suggest(obj, rule)
-        number = number_in_name(obj.name, result.prefix, result.suffix, 'name') if result.series else None
+        number = (
+            number_in_name(obj.name, result.prefix, result.suffix, 'name', rule.member_suffix)
+            if result.series else None
+        )
         return self.render('netbox_naming_convention/inc/naming_panel.html', extra_context={
             'rule': rule, 'fits': fits, 'suggestion': result, 'number': number,
             'number_text': rule.format_number(number) if number is not None else '',

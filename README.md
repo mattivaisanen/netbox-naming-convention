@@ -143,6 +143,7 @@ name. Set different priorities when you want a fixed order.
 | Numbers never handed out | Running numbers only. For example `0, 100-199`. |
 | Fill gaps | Running numbers only. On: the lowest number no device has now, including those of deleted devices. Off: one more than the highest number ever handed out, so gaps are never refilled (a name with a free number can still be typed by hand). The plugin can't tell a gap left on purpose from one left by accident: retire numbers on purpose with *Numbers never handed out*, or keep the retired device in NetBox (its number counts as used while it exists). |
 | Number scope | *Shared*: the number counts per text before it, so racks share one run (`AMS1-SW014-R01`, `AMS1-SW015-R02`). *Whole name*: each full name counts on its own (`AMS1-SW001-R01`, `AMS1-SW001-R02`). |
+| Member suffix | Optional. An ending a name may have after the number, for members of a stack or cluster. `#` is one or more digits: with `-#`, `SW005-1` and `SW005-2` follow the rule `SW{n}`, both count as number 5 and keep their ending when suggested again. New names are suggested without the ending. |
 | IP pattern | *From primary IP* only: a mask such as `*.*.*.N` (the octet marked N is the number) or a regular expression with one group, such as `\.([0-9]+)$`. |
 | Enforcement | *Off*, *Warn* (default) or *Refuse*, see above. |
 

@@ -16,7 +16,7 @@ import ipaddress
 import re
 
 __all__ = (
-    'NumberError', 'parse_skip', 'series_key', 'name_regex', 'used_numbers', 'next_number',
+    'NumberError', 'parse_skip', 'series_key', 'member_regex', 'name_regex', 'used_numbers', 'next_number',
     'number_from_ip', 'parse_ip_pattern',
 )
 
@@ -75,21 +75,36 @@ def series_key(prefix, suffix, scope, kind='device'):
     return f'{kind}:{text.lower()}'
 
 
-def name_regex(prefix, suffix, scope):
+def member_regex(member_suffix):
+    """
+    A rule's member suffix as a regular expression: literal text where # is
+    one or more digits ("-#" matches "-1", "-12"). Empty for no suffix.
+    """
+    if not member_suffix:
+        return ''
+    return ''.join(r'[0-9]+' if char == '#' else re.escape(char) for char in member_suffix)
+
+
+def name_regex(prefix, suffix, scope, member_suffix=''):
     """
     A regular expression that matches the names of a series and captures
     their number. For PostgreSQL (`name__iregex`) and Python alike.
+
+    With a member suffix ("-#"), names of stack members such as SW005-1
+    match too and count as number 5.
     """
     if scope == 'name':
-        return '^' + re.escape(prefix) + r'([0-9]+)' + re.escape(suffix) + '$'
+        member = member_regex(member_suffix)
+        member = f'({member})?' if member else ''
+        return '^' + re.escape(prefix) + r'([0-9]+)' + re.escape(suffix) + member + '$'
     # Shared scope: whatever follows the number is decoration, but it must not
     # be another digit (AMS1-SW1540 is number 1540, not 154).
     return '^' + re.escape(prefix) + r'([0-9]+)([^0-9]|$)'
 
 
-def used_numbers(prefix, suffix, scope, model, exclude_pk=None):
+def used_numbers(prefix, suffix, scope, model, exclude_pk=None, member_suffix=''):
     """Numbers objects of `model` (Device, VirtualMachine, Rack) already have in this series."""
-    pattern = name_regex(prefix, suffix, scope)
+    pattern = name_regex(prefix, suffix, scope, member_suffix)
     names = model.objects.filter(name__iregex=pattern)
     if exclude_pk:
         names = names.exclude(pk=exclude_pk)
