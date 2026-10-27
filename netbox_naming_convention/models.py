@@ -393,9 +393,17 @@ class NamingSeries(models.Model):
     deleted device's number does not come back when gap filling is off. The
     row is locked (`select_for_update()`) while a device takes a number, so
     two devices saved at the same time never get the same one.
+
+    `released` holds numbers of devices that were never approved (their
+    create request was rejected, withdrawn or expired in
+    netbox-change-approval). They are handed out again first, even with gap
+    filling off.
     """
     key = models.CharField(verbose_name=_('series'), max_length=255, unique=True)
     high_water = models.PositiveIntegerField(verbose_name=_('highest number handed out'), default=0)
+    released = ArrayField(
+        base_field=models.PositiveIntegerField(), verbose_name=_('numbers given back'), blank=True, default=list,
+    )
     last_updated = models.DateTimeField(auto_now=True)
 
     class Meta:

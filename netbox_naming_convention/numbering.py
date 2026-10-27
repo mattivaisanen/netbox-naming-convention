@@ -10,7 +10,8 @@ Used numbers come from the names objects of the rule's kind have in NetBox, comp
 case, so names given before the rule existed count. With gap filling off,
 the series also remembers the highest number it ever handed out
 (NamingSeries.high_water), so the number of a deleted device never comes
-back.
+back. Numbers of devices that were never approved (NamingSeries.released)
+are the exception: they are handed out again first.
 """
 import ipaddress
 import re
@@ -102,13 +103,14 @@ def used_numbers(prefix, suffix, scope, model, exclude_pk=None):
     return used
 
 
-def next_number(used, *, first, last, skip=(), fill_gaps=False, high_water=0):
+def next_number(used, *, first, last, skip=(), fill_gaps=False, high_water=0, released=()):
     """
     The number to hand out next, or NumberError when the series is full.
 
     - Gap filling on: the lowest free number from `first` on.
-    - Gap filling off: one more than the highest number in use or ever handed
-      out (`high_water`), and at least `first`.
+    - Gap filling off: the lowest `released` number that is free again (its
+      device was never approved), otherwise one more than the highest number
+      in use or ever handed out (`high_water`), and at least `first`.
 
     Numbers above `last` (a name typed by hand, such as SW5000 in a 3-digit
     series) are outside the range and don't count. Skipped ranges are jumped
@@ -122,6 +124,9 @@ def next_number(used, *, first, last, skip=(), fill_gaps=False, high_water=0):
                 return number
             number = _past_skipped(number + 1, skip)
     else:
+        for number in sorted(released):
+            if first <= number <= last and number not in used and not is_skipped(number, skip):
+                return number
         number = _past_skipped(max([first - 1, high_water, *used]) + 1, skip)
         if number <= last:
             return number

@@ -52,6 +52,41 @@ class ChangeApprovalTests(NetBoxData, TestCase):
         page = self.client.get(change.get_absolute_url())
         self.assertContains(page, 'was filled in by the naming rule "Utrecht switches"')
 
+    def add(self):
+        response = self.client.post(reverse('dcim:device_add'), self.form())
+        self.assertEqual(response.status_code, 302, response.content[:3000])
+        return Device.objects.latest('pk')
+
+    def test_rejected_device_gives_its_number_back(self):
+        from netbox_change_approval.models import ChangeRequest
+
+        self.add()
+        rejected = self.add()
+        self.assertEqual(rejected.name, 'NLUTSWI002_RA8')
+        ChangeRequest.objects.get(object_id=rejected.pk, action='create').reject(None, 'No')
+        self.assertFalse(Device.objects.filter(pk=rejected.pk).exists())
+        self.assertEqual(self.add().name, 'NLUTSWI002_RA8')
+
+    def test_number_rejected_after_a_later_one_comes_back(self):
+        from netbox_change_approval.models import ChangeRequest
+
+        first = self.add()
+        self.add()
+        ChangeRequest.objects.get(object_id=first.pk, action='create').retract(self.engineer)
+        self.assertEqual(self.add().name, 'NLUTSWI001_RA8')
+        self.assertEqual(self.add().name, 'NLUTSWI003_RA8')
+        self.assertEqual(NamingSeries.objects.get(key='device:nlutswi').released, [])
+
+    def test_deleted_approved_device_keeps_its_number(self):
+        from netbox_change_approval.context import applying_change_on
+
+        device = self.add()
+        with applying_change_on():
+            from netbox_change_approval.models import ChangeRequest
+            ChangeRequest.objects.get(object_id=device.pk, action='create').apply()
+            device.delete()
+        self.assertEqual(self.add().name, 'NLUTSWI002_RA8')
+
     def test_rename_to_the_rules_name_shows_on_the_change_request(self):
         from netbox_change_approval.context import applying_change_on
         from netbox_change_approval.models import ChangeRequest
