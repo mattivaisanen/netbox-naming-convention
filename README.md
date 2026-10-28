@@ -138,9 +138,9 @@ name. Set different priorities when you want a fixed order.
 | Wait for | The fields that must be set before the name is filled in, besides the values the template uses, such as site, location, rack, role, device type, cluster, tenant, platform, serial number or asset tag (the form lists those of the rule's kind). New device rules wait for site, role and device type (what the device form requires), rack rules for the site, virtual machine rules for nothing. |
 | Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |
 | Number source | *Running number* or *From primary IP*. |
-| Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. |
-| First number, last number | Running numbers only. The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3). |
-| Numbers never handed out | Running numbers only. For example `0, 100-199`. |
+| Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. Not used by a letter counter. |
+| First number, last number | Running numbers only. The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3), or 26 (`z`) for a letter counter, where `a` is 1. |
+| Numbers never handed out | Running numbers only. For example `0, 100-199`, or letters for a letter counter: `i, o, x-z`. |
 | Fill gaps | Running numbers only. On: the lowest number no device has now, including those of deleted devices. Off: one more than the highest number ever handed out, so gaps are never refilled (a name with a free number can still be typed by hand). The plugin can't tell a gap left on purpose from one left by accident: retire numbers on purpose with *Numbers never handed out*, or keep the retired device in NetBox (its number counts as used while it exists). |
 | Number scope | *Shared*: the number counts per text before it, so racks share one run (`AMS1-SW014-R01`, `AMS1-SW015-R02`). *Whole name*: each full name counts on its own (`AMS1-SW001-R01`, `AMS1-SW001-R02`). |
 | Member suffix | Optional. An ending a name may have after the number, for members of a stack or cluster. `#` is one or more digits: with `-#`, `SW005-1` and `SW005-2` follow the rule `SW{n}`, both count as number 5 and keep their ending when suggested again. New names are suggested without the ending. |
@@ -169,7 +169,8 @@ same lists as below.
 | Part | Gives |
 | --- | --- |
 | `SW-` | the text as written |
-| `{n}` | the number, padded to the rule's digits (at most one per template) |
+| `{n}` | the number, padded to the rule's digits |
+| `{a-z}`, `{A-Z}` | the number as one letter instead, `a` (1) to `z` (26), in lower or upper case. A template has one counter at most: `{n}`, `{a-z}` or `{A-Z}` |
 | `{site.name}`, `{site.slug}`, `{site.facility}` | values of the device's site |
 | `{location.name}`, `{rack.name}`, `{tenant.slug}`, `{platform.name}` | values of other objects the device is in or has |
 | `{role.name}`, `{role.parent.name}` | the role, or its parent (Switch for Switch / Access) |
@@ -223,6 +224,7 @@ for them the missing value is an error until it is set (or a name is typed).
 | Numbered by IP | `{site.slug}-sw{n}`, mask `*.*.*.N` | `ams1-sw006` for 10.0.0.6 |
 | Virtual machines per cluster | `{cluster.name\|upper}-VM{n}` | `PROD-VM001` |
 | Racks per site, 2 digits | `{site.slug\|upper}-R{n}` | `AMS1-R01` |
+| Devices per rack, by letter | `{rack.name}{a-z}` | `R07a`, `R07b`, `R12a` |
 
 Devices, virtual machines and racks count separately: a rack named
 `AMS1-R01` doesn't take number 1 from devices named `AMS1-R…`. Racks can't

@@ -71,7 +71,8 @@ FILTERS = (
 
 #: Other syntax.
 OTHER = (
-    ('{n}', _('the number, padded with zeros to the rule\'s digits. At most one per template.')),
+    ('{n}', _('the number, padded with zeros to the rule\'s digits. At most one counter per template.')),
+    ('{a-z} {A-Z}', _('the number as one letter instead, a to z (or A to Z): R07{a-z} gives R07a, R07b and so on.')),
     ('{{ }}', _('literal braces')),
     (_('anything else'), _('literal text, as written')),
 )

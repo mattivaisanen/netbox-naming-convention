@@ -28,7 +28,7 @@ from .kinds import prepare
 from .matching import find_rule, related_object
 from .models import AssignedName, NamingSeries, NumberSourceChoices
 from .numbering import (
-    NumberError, is_skipped, name_regex, next_number, number_from_ip, series_key, used_numbers,
+    NumberError, is_skipped, name_regex, next_number, number_from_ip, read_number, series_key, used_numbers,
 )
 from .template import NUMBER, TemplateError, filter_name
 
@@ -109,6 +109,11 @@ def _has_value(obj, key):
     return bool(getattr(obj, key, None))
 
 
+def _counter_pattern(rule):
+    """How the number shows in a pattern: ### for 3 digits, [a-z] or [A-Z] for a letter."""
+    return {'lower': '[a-z]', 'upper': '[A-Z]'}.get(rule.counter, '#' * rule.number_digits)
+
+
 def render_name(obj, rule):
     """(Suggestion with prefix/suffix/series/missing filled in, has_number)."""
     out = Suggestion(rule=rule)
@@ -126,7 +131,7 @@ def render_name(obj, rule):
     # Fields the rule waits for, in the rule's order, before the template's own.
     waiting = [key for key in rule.required_values if key in kind.wait_for and not _has_value(obj, key)]
     out.missing = waiting + [m for m in rendered.missing if m not in waiting]
-    out.pattern = filter_name(rendered.pattern, filters).replace(NUMBER, '#' * rule.number_digits)
+    out.pattern = filter_name(rendered.pattern, filters).replace(NUMBER, _counter_pattern(rule))
     if template.has_number:
         out.series = series_key(out.prefix, out.suffix, rule.number_scope, kind.key)
     if template.has_number and rule.number_source == NumberSourceChoices.IP and _primary_ip(obj) is None:
@@ -134,15 +139,15 @@ def render_name(obj, rule):
     return out, template.has_number
 
 
-def number_in_name(name, prefix, suffix, scope, member_suffix=''):
+def number_in_name(name, prefix, suffix, scope, member_suffix='', letters=False):
     """The number in an existing name of this series, or None."""
     if not name:
         return None
-    match = re.match(name_regex(prefix, suffix, scope, member_suffix), name, re.IGNORECASE)
-    return int(match.group(1)) if match else None
+    match = re.match(name_regex(prefix, suffix, scope, member_suffix, letters), name, re.IGNORECASE)
+    return read_number(match.group(1)) if match else None
 
 
-def split_name(name, prefix, suffix, member_suffix=''):
+def split_name(name, prefix, suffix, member_suffix='', letters=False):
     """
     A name that is exactly prefix + number + suffix, optionally followed by
     the rule's member suffix: (number, number as written, member ending),
@@ -150,11 +155,11 @@ def split_name(name, prefix, suffix, member_suffix=''):
     """
     if not name:
         return None
-    match = re.match(name_regex(prefix, suffix, 'name', member_suffix), name, re.IGNORECASE)
+    match = re.match(name_regex(prefix, suffix, 'name', member_suffix, letters), name, re.IGNORECASE)
     if not match:
         return None
     member = (match.group(2) or '') if member_suffix else ''
-    return int(match.group(1)), match.group(1), member
+    return read_number(match.group(1)), match.group(1), member
 
 
 def _too_long(name, rule):
@@ -183,6 +188,7 @@ def _pick(out, rule, obj, high_water, keep_current, taken=None):
     scope = rule.number_scope
     used = used_numbers(
         out.prefix, out.suffix, scope, rule.kind.model, exclude_pk=obj.pk, member_suffix=rule.member_suffix,
+        letters=rule.letters,
     )
     if taken:
         used = set(used) | taken.get(out.series, set())
@@ -211,9 +217,11 @@ def _pick(out, rule, obj, high_water, keep_current, taken=None):
         for name in [obj.name, *earlier.values_list('name', flat=True)]:
             # A stack member (SW005-1) keeps its number and its ending, even
             # though the other members of the stack use the same number.
-            parts = split_name(name, out.prefix, out.suffix, rule.member_suffix)
+            parts = split_name(name, out.prefix, out.suffix, rule.member_suffix, rule.letters)
             member = parts[2] if parts else ''
-            current = parts[0] if member else number_in_name(name, out.prefix, out.suffix, scope)
+            current = parts[0] if member else number_in_name(
+                name, out.prefix, out.suffix, scope, letters=rule.letters,
+            )
             if (current is not None and (member or current not in used)
                     and rule.number_first <= current <= rule.last_number
                     and not is_skipped(current, rule.skip_ranges)):
@@ -298,7 +306,7 @@ def remember(obj, rule=None):
     out, has_number = render_name(obj, rule)
     if not has_number or out.error or out.missing:
         return
-    number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope, rule.member_suffix)
+    number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope, rule.member_suffix, rule.letters)
     # A number outside the rule's range was never the rule's to hand out (and
     # may not even fit the database column, as in SW99999999999).
     if number is None or not rule.number_first <= number <= rule.last_number:
@@ -320,8 +328,9 @@ def follows(obj, rule=None):
     name = obj.name or ''
     if not has_number:
         return rule, name.lower() == out.prefix.lower()
-    parts = split_name(name, out.prefix, out.suffix, rule.member_suffix)
-    if parts is None or len(parts[1]) < rule.number_digits:
+    parts = split_name(name, out.prefix, out.suffix, rule.member_suffix, rule.letters)
+    # A letter is always one character; digits must be padded to the rule's digits.
+    if parts is None or (not rule.letters and len(parts[1]) < rule.number_digits):
         return rule, False
     number = parts[0]
     if rule.number_source == NumberSourceChoices.IP:
@@ -353,7 +362,7 @@ def check_typed_name(obj, rule):
         hint = _(' Leave the name empty to get {name}.').format(name=example.name) if example.ready else ''
         return _('The name does not follow the rule "{rule}".').format(rule=rule) + hint
     if has_number:
-        number, _text, member = split_name(obj.name, out.prefix, out.suffix, rule.member_suffix)
+        number, _text, member = split_name(obj.name, out.prefix, out.suffix, rule.member_suffix, rule.letters)
         if is_skipped(number, rule.skip_ranges):
             return _('Number {number} is never handed out by the rule "{rule}".').format(
                 number=rule.format_number(number), rule=rule,
@@ -362,7 +371,7 @@ def check_typed_name(obj, rule):
         # two objects with the very same name.
         used = used_numbers(
             out.prefix, out.suffix, rule.number_scope, rule.kind.model, exclude_pk=obj.pk,
-            member_suffix=rule.member_suffix,
+            member_suffix=rule.member_suffix, letters=rule.letters,
         )
         if not member and number in used:
             return _taken(rule, number, out.prefix)

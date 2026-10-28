@@ -290,6 +290,50 @@ class NamingTests(NetBoxData, TestCase):
         self.assertEqual(device.name, 'NLUTSWI001_RA8')
 
 
+class LetterCounterTests(NetBoxData, TestCase):
+    """{rack.name}{a-z}: the rack's name and one letter, a to z."""
+    @classmethod
+    def setUpTestData(cls):
+        cls.make_netbox()
+        cls.letters = cls.rule(roles=[cls.switch], template='{rack.name}{a-z}', number_scope=NumberScopeChoices.NAME)
+
+    def test_letters_count_per_rack(self):
+        self.assertEqual(self.device(rack=self.ra8).name, 'RA8a')
+        self.assertEqual(self.device(rack=self.ra8).name, 'RA8b')
+        self.assertEqual(self.device(rack=self.ra9).name, 'RA9a')
+        # Typed in another case or before the rule existed, a name still counts.
+        self.device(name='RA8D', rack=self.ra8)
+        self.assertEqual(self.device(rack=self.ra8).name, 'RA8e')
+
+    def test_follows_and_refuses(self):
+        self.letters.enforcement = EnforcementChoices.REFUSE
+        self.letters.skip_numbers = 'a'
+        self.letters.save()
+        self.assertEqual(self.device(rack=self.ra8).name, 'RA8b')
+        for name in ('RA8', 'RA8bb', 'RA81', 'RA8a'):
+            with self.assertRaises(ValidationError, msg=name):
+                self.device(name=name, rack=self.ra8)
+        device = self.device(name='RA8z', rack=self.ra8)
+        self.assertEqual(follows(device), (self.letters, True))
+
+    def test_series_full_after_z(self):
+        self.letters.number_last = 2
+        self.letters.save()
+        self.device(rack=self.ra8)
+        self.device(rack=self.ra8)
+        self.assertIn('full', suggest(self.device(rack=self.ra8, save=False)).error)
+
+    def test_rule_checks(self):
+        self.letters.number_last = 27
+        with self.assertRaises(ValidationError):
+            self.letters.full_clean()
+        self.letters.number_last = None
+        self.letters.number_source = NumberSourceChoices.IP
+        self.letters.ip_pattern = '*.*.*.N'
+        with self.assertRaises(ValidationError):
+            self.letters.full_clean()
+
+
 class NumberFromIPTests(NetBoxData, TestCase):
     @classmethod
     def setUpTestData(cls):

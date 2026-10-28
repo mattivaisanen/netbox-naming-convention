@@ -11,28 +11,53 @@ case, so names given before the rule existed count. With gap filling off,
 the series also remembers the highest number it ever handed out
 (NamingSeries.high_water), so the number of a deleted device never comes
 back.
+
+A rule counts in digits ({n}: 001, 002, ...) or in letters ({a-z} or
+{A-Z}: a is 1, b is 2, ... z is 26). Numbers are whole numbers either way;
+only how they are written in the name differs (`letters=True`).
 """
 import ipaddress
 import re
 
 __all__ = (
     'NumberError', 'parse_skip', 'series_key', 'member_regex', 'name_regex', 'used_numbers', 'next_number',
-    'number_from_ip', 'parse_ip_pattern',
+    'number_from_ip', 'parse_ip_pattern', 'LETTERS', 'letter', 'read_number',
 )
 
 #: Longest a number may be, in digits.
 MAX_DIGITS = 9
+
+#: The letters a letter counter goes through, a (1) to z (26).
+LETTERS = 'abcdefghijklmnopqrstuvwxyz'
+
+
+def letter(number):
+    """1 -> 'a', 26 -> 'z'."""
+    return LETTERS[number - 1]
+
+
+def read_number(text):
+    """The number a counter in a name stands for: '007' -> 7, 'c' or 'C' -> 3."""
+    if text.isdigit():
+        return int(text)
+    return LETTERS.index(text.lower()) + 1
 
 
 class NumberError(ValueError):
     pass
 
 
-def parse_skip(text):
+def parse_skip(text, letters=False):
     """
     "0, 100-199, 666" -> a list of (low, high) ranges. Raises NumberError on
-    anything else.
+    anything else. With `letters`, letters work too: "i, o, x-z".
     """
+    def value(item):
+        item = item.strip()
+        if letters and len(item) == 1 and item.lower() in LETTERS:
+            return read_number(item)
+        return int(item)
+
     ranges = []
     for item in (text or '').replace(';', ',').split(','):
         item = item.strip()
@@ -40,8 +65,8 @@ def parse_skip(text):
             continue
         low, sep, high = item.partition('-')
         try:
-            low = int(low)
-            high = int(high) if sep else low
+            low = value(low)
+            high = value(high) if sep else low
         except ValueError:
             raise NumberError(f'"{item}" is not a number or a range such as 100-199.') from None
         if low < 0 or high < low:
@@ -85,26 +110,30 @@ def member_regex(member_suffix):
     return ''.join(r'[0-9]+' if char == '#' else re.escape(char) for char in member_suffix)
 
 
-def name_regex(prefix, suffix, scope, member_suffix=''):
+def name_regex(prefix, suffix, scope, member_suffix='', letters=False):
     """
     A regular expression that matches the names of a series and captures
-    their number. For PostgreSQL (`name__iregex`) and Python alike.
+    their number. For PostgreSQL (`name__iregex`) and Python alike, both
+    without case.
 
     With a member suffix ("-#"), names of stack members such as SW005-1
-    match too and count as number 5.
+    match too and count as number 5. With `letters`, the number is one
+    letter (RA8c is number 3 of RA8).
     """
+    counter, other = ('([a-z])', 'a-z') if letters else ('([0-9]+)', '0-9')
     if scope == 'name':
         member = member_regex(member_suffix)
         member = f'({member})?' if member else ''
-        return '^' + re.escape(prefix) + r'([0-9]+)' + re.escape(suffix) + member + '$'
+        return '^' + re.escape(prefix) + counter + re.escape(suffix) + member + '$'
     # Shared scope: whatever follows the number is decoration, but it must not
-    # be another digit (AMS1-SW1540 is number 1540, not 154).
-    return '^' + re.escape(prefix) + r'([0-9]+)([^0-9]|$)'
+    # be another digit (AMS1-SW1540 is number 1540, not 154), or another
+    # letter for a letter counter (RA8ab is not number 1 of RA8).
+    return '^' + re.escape(prefix) + counter + f'([^{other}]|$)'
 
 
-def used_numbers(prefix, suffix, scope, model, exclude_pk=None, member_suffix=''):
+def used_numbers(prefix, suffix, scope, model, exclude_pk=None, member_suffix='', letters=False):
     """Numbers objects of `model` (Device, VirtualMachine, Rack) already have in this series."""
-    pattern = name_regex(prefix, suffix, scope, member_suffix)
+    pattern = name_regex(prefix, suffix, scope, member_suffix, letters)
     names = model.objects.filter(name__iregex=pattern)
     if exclude_pk:
         names = names.exclude(pk=exclude_pk)
@@ -113,7 +142,7 @@ def used_numbers(prefix, suffix, scope, model, exclude_pk=None, member_suffix=''
     for name in names.values_list('name', flat=True):
         match = compiled.match(name)
         if match:
-            used.add(int(match.group(1)))
+            used.add(read_number(match.group(1)))
     return used
 
 

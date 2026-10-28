@@ -27,7 +27,7 @@ from netbox.models import NetBoxModel
 from utilities.choices import ChoiceSet
 
 from .kinds import DEVICE, KINDS, ObjectTypeChoices
-from .numbering import MAX_DIGITS, NumberError, parse_ip_pattern, parse_skip
+from .numbering import LETTERS, MAX_DIGITS, NumberError, letter, parse_ip_pattern, parse_skip
 from .template import Template, TemplateError, parse_name_filters
 
 __all__ = (
@@ -199,8 +199,8 @@ class NamingRule(NetBoxModel):
     template = models.CharField(
         verbose_name=_('template'), max_length=200,
         help_text=_(
-            'Literal text, {n} for the number and values of the object such as {site.slug|upper} or '
-            '{rack.name|before:-|optional}.'
+            'Literal text, {n} for the number ({a-z} or {A-Z} to count in letters) and values of the object '
+            'such as {site.slug|upper} or {rack.name|before:-|optional}.'
         ),
     )
     required_values = ArrayField(
@@ -239,11 +239,13 @@ class NamingRule(NetBoxModel):
     number_first = models.PositiveIntegerField(verbose_name=_('first number'), default=1)
     number_last = models.PositiveIntegerField(
         verbose_name=_('last number'), blank=True, null=True,
-        help_text=_('Leave empty for the largest number the digits allow (999 for 3 digits).'),
+        help_text=_(
+            'Leave empty for the largest number the digits allow (999 for 3 digits). Letters count a=1 to z=26.'
+        ),
     )
     skip_numbers = models.CharField(
         verbose_name=_('numbers never handed out'), max_length=200, blank=True,
-        help_text=_('Numbers and ranges, for example "0, 100-199".'),
+        help_text=_('Numbers and ranges, for example "0, 100-199". Letters for a letter counter: "i, o".'),
     )
     fill_gaps = models.BooleanField(
         verbose_name=_('fill gaps'), default=False,
@@ -295,8 +297,32 @@ class NamingRule(NetBoxModel):
         return ObjectTypeChoices.colors.get(self.object_type)
 
     @property
+    def letters(self):
+        """Whether the template counts in letters ({a-z} or {A-Z}) instead of digits."""
+        return self.counter in ('lower', 'upper')
+
+    @property
+    def counter(self):
+        """The template's counter (template.COUNTERS), '' without one or with a broken template."""
+        try:
+            return self.parsed_template.counter
+        except TemplateError:
+            return ''
+
+    @property
     def last_number(self):
-        return self.number_last if self.number_last is not None else 10 ** self.number_digits - 1
+        if self.number_last is not None:
+            return self.number_last
+        return len(LETTERS) if self.letters else 10 ** self.number_digits - 1
+
+    @property
+    def first_text(self):
+        """The range's ends for the rule page: 1 and 999, or a and z."""
+        return self.format_number(self.number_first) if self.letters else str(self.number_first)
+
+    @property
+    def last_text(self):
+        return self.format_number(self.last_number) if self.letters else str(self.last_number)
 
     @property
     def parsed_template(self):
@@ -324,11 +350,16 @@ class NamingRule(NetBoxModel):
     @property
     def skip_ranges(self):
         try:
-            return parse_skip(self.skip_numbers)
+            return parse_skip(self.skip_numbers, self.letters)
         except NumberError:
             return []
 
     def format_number(self, number):
+        """The number as the name writes it: 007, or c / C for a letter counter."""
+        counter = self.counter
+        if counter in ('lower', 'upper') and 1 <= number <= len(LETTERS):
+            text = letter(number)
+            return text.upper() if counter == 'upper' else text
         return str(number).zfill(self.number_digits)
 
     def _default_wait_for(self):
@@ -351,8 +382,15 @@ class NamingRule(NetBoxModel):
         except TemplateError as e:
             errors['template'] = str(e)
         else:
+            letters = template.counter in ('lower', 'upper')
             if self.number_source == NumberSourceChoices.IP and not template.has_number:
                 errors['template'] = _('A rule that reads its number from the IP needs {n} in the template.')
+            elif self.number_source == NumberSourceChoices.IP and letters:
+                errors['template'] = _('A number from the IP is written in digits: use {n}, not letters.')
+            elif letters and not 1 <= self.number_first <= len(LETTERS):
+                errors['number_first'] = _('Letters count from 1 (a) to 26 (z).')
+            elif letters and self.number_last is not None and self.number_last > len(LETTERS):
+                errors['number_last'] = _('Letters count from 1 (a) to 26 (z).')
         if self.number_source == NumberSourceChoices.IP and not kind.has_primary_ip:
             errors['number_source'] = _('{kinds} have no primary IP to read a number from.').format(
                 kinds=kind.label_plural.capitalize(),
@@ -377,7 +415,7 @@ class NamingRule(NetBoxModel):
             except NumberError as e:
                 errors['ip_pattern'] = str(e)
         try:
-            parse_skip(self.skip_numbers)
+            parse_skip(self.skip_numbers, self.letters)
         except NumberError as e:
             errors['skip_numbers'] = str(e)
         if self.member_suffix and (self.member_suffix[0] == '#' or self.member_suffix[0].isdigit()):

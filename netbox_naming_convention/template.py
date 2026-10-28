@@ -4,6 +4,9 @@ Name templates.
 A template is literal text with parts in braces:
 
 - ``{n}``: the number (padded to the rule's digits). At most one.
+- ``{a-z}`` or ``{A-Z}``: the number as one letter instead (a is 1, z is
+  26), lower or upper case. A template has one counter at most: {n}, {a-z}
+  or {A-Z}.
 - ``{path|filter|filter}``: a value of the object, such as ``{site.name}``,
   ``{role.parent.slug}``, ``{rack.name}`` or ``{site.cf.code}``, changed by
   filters from left to right. Where a path may start depends on the kind of
@@ -12,7 +15,7 @@ A template is literal text with parts in braces:
 ``{{`` and ``}}`` are literal braces. Everything else is literal text, so
 ``SW{n}`` is a valid template with no values at all.
 
-The text before ``{n}`` is the *prefix*, the text after it the *suffix*. A
+The text before the counter is the *prefix*, the text after it the *suffix*. A
 rule's series is its prefix (number scope "shared") or prefix + suffix
 ("whole name"); see numbering.py.
 
@@ -26,7 +29,7 @@ from dataclasses import dataclass, field
 from .kinds import DEVICE
 
 __all__ = (
-    'Template', 'TemplateError', 'Rendered', 'ATTRIBUTES', 'FILTERS', 'NUMBER', 'NAME_FILTERS',
+    'Template', 'TemplateError', 'Rendered', 'ATTRIBUTES', 'FILTERS', 'NUMBER', 'COUNTERS', 'NAME_FILTERS',
     'parse_name_filters', 'filter_name',
 )
 
@@ -61,12 +64,16 @@ FILTERS = {
 #: Stands for the number in Rendered.pattern.
 NUMBER = '\x00'
 
+#: The counters a template may have, and how each writes the number.
+COUNTERS = {'n': 'digits', 'a-z': 'lower', 'A-Z': 'upper'}
+
 _TOKEN = re.compile(r'\{\{|\}\}|\{([^{}]*)\}|[{}]')
 
 
 @dataclass
 class Part:
     kind: str  # 'text', 'number' or 'value'
+    #: Literal text, or for a number part its counter (COUNTERS values).
     text: str = ''
     path: tuple = ()
     filters: list = field(default_factory=list)
@@ -264,11 +271,11 @@ class Template:
             inner = match.group(1)
             if not inner.strip():
                 raise TemplateError('Empty {} in the template.')
-            if inner.strip() == 'n':
+            if inner.strip() in COUNTERS:
                 numbers += 1
                 if numbers > 1:
-                    raise TemplateError('A template can have only one {n}.')
-                parts.append(Part('number'))
+                    raise TemplateError('A template can have only one counter: {n}, {a-z} or {A-Z}.')
+                parts.append(Part('number', text=COUNTERS[inner.strip()]))
                 continue
             path, *filters = inner.lstrip().split('|')
             parts.append(Part(
@@ -283,6 +290,11 @@ class Template:
     @property
     def has_number(self):
         return any(p.kind == 'number' for p in self.parts)
+
+    @property
+    def counter(self):
+        """How the number is written: 'digits', 'lower' or 'upper' ('' without a number)."""
+        return next((p.text for p in self.parts if p.kind == 'number'), '')
 
     @property
     def paths(self):
