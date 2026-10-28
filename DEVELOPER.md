@@ -114,6 +114,12 @@ number from `number_first` wins and the high-water mark is ignored. Used
 numbers above the rule's last number don't count, and `next_number()` jumps
 over skipped ranges instead of stepping through them.
 
+A letter counter (`{a-z}`, `{A-Z}`) is the same whole number underneath, 1
+to 26. Only the edges change: `rule.format_number()` writes it as a letter,
+`numbering.name_regex(..., letters=True)` matches one letter, and
+`read_number()` turns it back into a number. Series, high-water marks and
+gap filling don't know the difference.
+
 `NamingSeries` is a plain model on purpose: approval plugins gate every
 NetBoxModel, and taking a number must never wait for approval. The same
 goes for `AssignedName` (below), which points at any object through a

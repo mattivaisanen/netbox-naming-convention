@@ -24,6 +24,14 @@ class TemplateTests(SimpleTestCase):
         self.assertEqual((out.prefix, out.suffix, out.missing), ('NLUTSWI', '_RA8', []))
         self.assertEqual(out.name('154'), 'NLUTSWI154_RA8')
 
+    def test_letter_counter(self):
+        out = render('{rack.name}{a-z}')
+        self.assertEqual((out.prefix, out.suffix, Template('{rack.name}{a-z}').counter), ('RA8', '', 'lower'))
+        self.assertEqual(Template('X{A-Z}').counter, 'upper')
+        with self.assertRaises(TemplateError):
+            Template('{n}{a-z}')
+        self.assertEqual(parse_skip('i, o, x-z', letters=True), [(9, 9), (15, 15), (24, 26)])
+
     def test_fixed_text(self):
         out = render('NLUTSWI{n}')
         self.assertEqual((out.prefix, out.suffix), ('NLUTSWI', ''))
