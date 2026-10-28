@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+New:
+
+- *Member suffix* per rule, for stack or cluster members: with `-#`, names
+  such as `SW005-1` and `SW005-2` follow the rule `SW{n}`, share number 5
+  (which then is not a gap) and keep their ending when suggested again.
+
 ## 0.2.0 (2026-10-26)
 
 New:

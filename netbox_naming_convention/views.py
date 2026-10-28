@@ -49,7 +49,7 @@ def rule_overview(rule, user):
                 'key': out.series, 'prefix': out.prefix, 'suffix': out.suffix, 'count': 0, 'highest': None,
                 'example': obj,
             })
-            number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope)
+            number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope, rule.member_suffix)
             if number is not None:
                 entry['count'] += 1
                 entry['highest'] = max(entry['highest'] or 0, number)

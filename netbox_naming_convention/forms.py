@@ -76,11 +76,12 @@ class NamingRuleForm(NetBoxModelForm):
             'name', 'description', 'enabled', 'priority', 'object_type', *NamingRule.CONDITION_FIELDS, 'statuses',
             'tag_match', 'constraint', 'template', 'name_filters', 'required_values', 'number_source', 'ip_pattern',
             'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope',
-            'enforcement', 'comments', 'tags',
+            'member_suffix', 'enforcement', 'comments', 'tags',
         )
         widgets = {
             'template': forms.TextInput(attrs={'class': 'font-monospace'}),
             'name_filters': forms.TextInput(attrs={'class': 'font-monospace'}),
+            'member_suffix': forms.TextInput(attrs={'class': 'font-monospace'}),
             'object_type': HTMXSelect(),
             'number_source': HTMXSelect(),
         }
@@ -119,7 +120,7 @@ class NamingRuleForm(NetBoxModelForm):
             kind_fieldset = None
         number = [name for name in (
             'number_source', 'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps',
-            'number_scope', 'ip_pattern',
+            'number_scope', 'member_suffix', 'ip_pattern',
         ) if name in self.fields]
         self.fieldsets = tuple(fieldset for fieldset in (
             FieldSet('name', 'description', 'enabled', 'priority', 'object_type', 'tags', name=_('Rule')),

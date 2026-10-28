@@ -47,6 +47,7 @@
         <tr><th scope="row">{% trans "Never handed out" %}</th><td>{{ object.skip_numbers|placeholder }}</td></tr>
         <tr><th scope="row">{% trans "Fill gaps" %}</th><td>{% checkmark object.fill_gaps %}</td></tr>
         <tr><th scope="row">{% trans "Number scope" %}</th><td>{{ object.get_number_scope_display }}</td></tr>
+        <tr><th scope="row">{% trans "Member suffix" %}</th><td class="font-monospace">{{ object.member_suffix|placeholder }}</td></tr>
       </table>
     </div>
     <div class="card">
