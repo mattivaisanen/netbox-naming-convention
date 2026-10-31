@@ -1,5 +1,5 @@
 from django.utils.translation import gettext as _
-from rest_framework import status
+from rest_framework import mixins, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -7,12 +7,13 @@ from rest_framework.routers import APIRootView
 from rest_framework.views import APIView
 
 from extras.models import Tag
-from netbox.api.viewsets import NetBoxModelViewSet
+from netbox.api.viewsets import BaseViewSet, NetBoxModelViewSet
 
 from .. import filtersets
 from ..kinds import KINDS
-from ..models import NamingRule
-from ..naming import suggest
+from ..matching import find_rule
+from ..models import NamingRule, ReservedName
+from ..naming import reserve, suggest
 from . import serializers
 
 
@@ -25,6 +26,13 @@ class NamingRuleViewSet(NetBoxModelViewSet):
     queryset = NamingRule.objects.prefetch_related(*NamingRule.CONDITION_FIELDS, 'tags')
     serializer_class = serializers.NamingRuleSerializer
     filterset_class = filtersets.NamingRuleFilterSet
+
+
+class ReservedNameViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, BaseViewSet):
+    """Names reserved ahead of time. Reserve with POST reserve/; DELETE frees a name."""
+    queryset = ReservedName.objects.select_related('rule')
+    serializer_class = serializers.ReservedNameSerializer
+    filterset_fields = ('rule', 'object_type', 'name')
 
 
 def object_from_values(user, kind, values):
@@ -65,6 +73,13 @@ def object_from_values(user, kind, values):
     return obj
 
 
+def _check_perm(user, kind):
+    if not (user.has_perm(kind.permission('add')) or user.has_perm(kind.permission('change'))):
+        raise PermissionDenied(_('Suggesting names needs permission to add or change {kinds}.').format(
+            kinds=kind.label_plural,
+        ))
+
+
 class SuggestView(APIView):
     """
     POST an object form's values (`object_type`: device, virtualmachine or
@@ -84,10 +99,7 @@ class SuggestView(APIView):
         if values.get('device') and not values.get('id'):
             values['id'] = values['device']
         user = request.user
-        if not (user.has_perm(kind.permission('add')) or user.has_perm(kind.permission('change'))):
-            raise PermissionDenied(_('Suggesting names needs permission to add or change {kinds}.').format(
-                kinds=kind.label_plural,
-            ))
+        _check_perm(user, kind)
         obj = object_from_values(user, kind, values)
         if obj is None:
             return Response({'detail': _('{kind} not found.').format(kind=kind.label)},
@@ -96,3 +108,47 @@ class SuggestView(APIView):
         data = result.as_dict()
         data['current'] = obj.name or None
         return Response(data)
+
+
+class ReserveView(APIView):
+    """
+    POST the values names are built from (like suggest, plus `count`,
+    `expires`, `description` and optionally `rule`); the next names are
+    reserved. Nobody else gets their numbers until an object is saved with
+    the name, the reservation is deleted, or it expires.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_view_name(self):
+        return 'Reserve names'
+
+    def post(self, request):
+        serializer = serializers.ReserveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        user = request.user
+        if not user.has_perm('netbox_naming_convention.add_reservedname'):
+            raise PermissionDenied(_('Reserving names needs permission to add reserved names.'))
+        rule = None
+        if values.get('rule'):
+            rule = NamingRule.objects.restrict(user, 'view').filter(pk=values['rule']).first()
+            if rule is None:
+                return Response({'detail': _('Rule not found.')}, status=status.HTTP_404_NOT_FOUND)
+        kind = KINDS[values.get('object_type') or (rule.object_type if rule else 'device')]
+        _check_perm(user, kind)
+        values.pop('id', None)
+        obj = object_from_values(user, kind, values)
+        rule = rule or find_rule(obj)
+        if rule is None:
+            return Response({'detail': _('No rule names this {kind}.').format(kind=kind.label.lower())},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if rule.kind is not kind:
+            return Response({'detail': _('The rule "{rule}" names {kinds}.').format(
+                rule=rule, kinds=rule.kind.label_plural)}, status=status.HTTP_400_BAD_REQUEST)
+        reservations, error = reserve(
+            obj, rule, values['count'], expires=values.get('expires'), description=values['description'], user=user,
+        )
+        if error:
+            return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+        data = serializers.ReservedNameSerializer(reservations, many=True, context={'request': request}).data
+        return Response(data, status=status.HTTP_201_CREATED)

@@ -153,6 +153,31 @@ class ViewTests(NetBoxData, TestCase):
         self.assertNotContains(page, 'id="id_skip_numbers"')
         self.assertNotContains(page, 'id="id_fill_gaps"')
 
+    def test_changing_what_a_rule_names_drops_conditions_it_has_no_use_for(self):
+        response = self.client.post(reverse(URL + 'namingrule_edit', args=[self.switches.pk]), {
+            'name': 'Utrecht racks', 'template': 'R{n}', 'priority': 100, 'enabled': 'on',
+            'object_type': 'rack', 'sites': [self.utrecht.pk], 'number_source': 'sequence', 'number_digits': 2,
+            'number_first': 1, 'number_scope': 'shared', 'enforcement': 'warn', 'tag_match': 'all',
+            'required_values': ['site'],
+        })
+        self.assertEqual(response.status_code, 302, response.content[:3000])
+        self.assertFalse(self.switches.roles.exists())  # racks have no device roles
+        self.assertEqual(list(self.switches.sites.all()), [self.utrecht])
+
+    def test_reserve_names_from_the_rule_page(self):
+        url = reverse(URL + 'namingrule_reserve', args=[self.switches.pk])
+        page = self.client.get(url)
+        self.assertContains(page, 'id="id_rack"')
+        response = self.client.post(url, {'count': 2, 'site': self.utrecht.pk, 'role': self.access.pk,
+                                          'rack': self.ra8.pk})
+        self.assertEqual(response.status_code, 302, response.content[:3000])
+        page = self.client.get(self.switches.get_absolute_url())
+        self.assertContains(page, 'NLUTSWI001_RA8')
+        self.assertContains(page, 'NLUTSWI002_RA8')
+        first = self.switches.reserved_names.first()
+        self.client.post(reverse(URL + 'namingrule_unreserve', args=[self.switches.pk]), {'pk': [first.pk]})
+        self.assertEqual(list(self.switches.reserved_names.values_list('name', flat=True)), ['NLUTSWI002_RA8'])
+
     def test_ip_rule_form_saves_without_the_sequence_fields(self):
         response = self.client.post(reverse(URL + 'namingrule_add'), {
             'name': 'By IP', 'template': 'sw{n}', 'priority': 100, 'enabled': 'on', 'roles': [self.router.pk],

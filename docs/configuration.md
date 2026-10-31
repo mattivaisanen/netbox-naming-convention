@@ -24,6 +24,8 @@ README).
 | `netbox_naming_convention.view_namingrule` | Seeing rules, their series and the objects that don't follow them |
 | `netbox_naming_convention.add_namingrule`, `change_namingrule`, `delete_namingrule` | Managing rules |
 | `dcim.add_device` or `dcim.change_device` (and the same for virtual machines and racks) | Using the suggest endpoint for that kind of object (the forms use it) |
+| `netbox_naming_convention.add_reservedname` | Reserving names (also needs permission to add or change that kind of object) |
+| `netbox_naming_convention.view_reservedname`, `delete_reservedname` | Seeing reserved names, freeing them |
 | (signed in) | The template reference page (*All values and filters* on the rule form) |
 
 Naming an object needs no permission of its own: it happens as part of

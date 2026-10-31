@@ -10,6 +10,9 @@ The plugin's records.
 - AssignedName: bookkeeping too. Which names a rule gave (filled in when the
   object was added, or suggested and accepted on edit), for the object's
   page and change requests.
+- ReservedName: bookkeeping too. A name taken ahead of time, before its
+  object exists in NetBox (for labels or an order). Its number is not handed
+  out to anyone else; an object saved with the name uses it up.
 
 A rule names one kind of object (`object_type`: devices, virtual machines
 or racks, see kinds.py); which of its conditions apply depends on that.
@@ -20,11 +23,14 @@ from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models.functions import Lower
+from django.utils import timezone
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from netbox.models import NetBoxModel
 from utilities.choices import ChoiceSet
+from utilities.querysets import RestrictedQuerySet
 
 from .kinds import DEVICE, KINDS, ObjectTypeChoices
 from .numbering import LETTERS, MAX_DIGITS, NumberError, letter, parse_ip_pattern, parse_skip
@@ -32,7 +38,7 @@ from .template import Template, TemplateError, parse_name_filters
 
 __all__ = (
     'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NamingRule', 'RequiredValueChoices', 'NamingSeries',
-    'NumberScopeChoices', 'NumberSourceChoices', 'ObjectTypeChoices',
+    'NumberScopeChoices', 'NumberSourceChoices', 'ObjectTypeChoices', 'ReservedName',
     'TagMatchChoices',
 )
 
@@ -523,3 +529,52 @@ class AssignedName(models.Model):
         if not obj.pk or not name:
             return None
         return cls.of(obj).filter(name=name).select_related('rule').first()
+
+
+class ReservedNameQuerySet(RestrictedQuerySet):
+    def active(self):
+        """Reservations that have not expired (expiring today still counts)."""
+        today = timezone.localdate()
+        return self.filter(models.Q(expires__isnull=True) | models.Q(expires__gte=today))
+
+
+class ReservedName(models.Model):
+    """
+    A name reserved ahead of time (naming.reserve()). While it is active, its
+    number counts as used in its series, like an object's. Saving an object
+    of the same kind with this name removes the reservation (signals.py).
+    """
+    #: The kind of object the name is for (kinds.Kind.key).
+    object_type = models.CharField(verbose_name=_('for'), max_length=30, choices=ObjectTypeChoices)
+    name = models.CharField(verbose_name=_('name'), max_length=100)
+    rule = models.ForeignKey(
+        to=NamingRule, on_delete=models.CASCADE, related_name='reserved_names', verbose_name=_('rule'),
+    )
+    series = models.CharField(verbose_name=_('series'), max_length=255, blank=True)
+    number = models.PositiveIntegerField(verbose_name=_('number'), null=True, blank=True)
+    expires = models.DateField(
+        verbose_name=_('expires'), null=True, blank=True,
+        help_text=_('After this day the number is free again. Empty: kept until used or removed.'),
+    )
+    description = models.CharField(verbose_name=_('description'), max_length=200, blank=True)
+    created_by = models.CharField(verbose_name=_('reserved by'), max_length=150, blank=True)
+    created = models.DateTimeField(verbose_name=_('reserved'), auto_now_add=True)
+
+    objects = ReservedNameQuerySet.as_manager()
+
+    class Meta:
+        ordering = ('name',)
+        verbose_name = _('reserved name')
+        verbose_name_plural = _('reserved names')
+        constraints = [
+            models.UniqueConstraint(
+                Lower('name'), 'object_type', name='netbox_naming_convention_reserved_name',
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def expired(self):
+        return self.expires is not None and self.expires < timezone.localdate()

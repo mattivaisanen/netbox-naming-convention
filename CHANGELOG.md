@@ -9,6 +9,12 @@ New:
   (which then is not a gap) and keep their ending when suggested again.
 - Letter counter: `{a-z}` or `{A-Z}` in a template counts a to z instead
   of digits, such as `{rack.name}{a-z}` for `R07a`, `R07b`.
+- Reserve names ahead of time: *Reserve names* on a rule page (or
+  `POST /api/plugins/naming-convention/reserve/`) takes the next names of
+  the rule for devices, virtual machines or racks that aren't in NetBox
+  yet, for labels or an order. Nobody else gets those numbers; saving an
+  object with the reserved name uses it up. Reservations can expire, and
+  the rule page frees them.
 
 Fixed:
 
@@ -17,6 +23,9 @@ Fixed:
   next device gets it, even with gap filling off and even when later
   numbers were handed out meanwhile. A device deleted after approval still
   keeps its number, as before. Nothing changes without change-approval.
+- Changing what a rule names (say from devices to racks) on the rule form
+  kept the old kind's conditions, such as device roles, out of sight. The
+  API then refused every edit of the rule. They are now cleared.
 
 ## 0.2.0 (2026-10-26)
 

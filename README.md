@@ -151,6 +151,22 @@ name. Set different priorities when you want a fixed order.
 The rule form shows only the number fields that apply to the number source
 you pick.
 
+### Reserving names
+
+*Reserve names* on a rule page takes the next names of the rule before
+their devices (or virtual machines, racks) exist in NetBox, for labels or an
+order. Pick how many, the values the names are built from (such as the site
+and rack; values the rule's conditions name only one of are filled in), and
+optionally a day the reservation expires and a description. The rule page
+lists the reserved names; *Free selected* gives them back.
+
+While a name is reserved, nobody else gets its number: not the add form,
+not the API, not a name typed under *Refuse*. Saving an object with the
+reserved name (type it into the name field) uses the reservation up. After
+the expiry day the number is free again with gap filling on; without gap
+filling it is never handed out again, like a deleted device's. Rules that
+read the number from the IP can't reserve names.
+
 ### Preview
 
 Under the template, the rule form shows what names look like
@@ -241,6 +257,13 @@ take their number from an IP (they have none).
   `id` for an existing one) and get the rule, the name, the number and the
   values it still waits for. Saves and reserves nothing. Needs permission to
   add or change that kind of object.
+- `POST /api/plugins/naming-convention/reserve/`: reserve the next names
+  (see *Reserving names*). Send the values like for `suggest`, plus `count`
+  (default 1, at most 100), `expires` (a date), `description` and
+  optionally `rule` (an id; by default the rule that matches the values).
+  Returns the reserved names.
+- `/api/plugins/naming-convention/reservations/`: the reserved names (list,
+  read, delete). Deleting one frees its name.
 - `POST /api/dcim/devices/`, `/api/virtualization/virtual-machines/` and
   `/api/dcim/racks/` without a `name` get the rule's name, as in the web UI.
   For virtual machines and racks without a rule NetBox still requires a name.

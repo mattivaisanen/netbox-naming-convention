@@ -2,9 +2,10 @@ import csv
 import io
 from collections import OrderedDict
 
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views import View
@@ -15,8 +16,9 @@ from utilities.views import register_model_view
 from . import filtersets, forms, preview, reference, tables
 from .kinds import KINDS
 from .matching import find_rule, ordered_rules, rule_objects, rules_queryset
-from .models import NamingRule, NamingSeries
-from .naming import follows, number_in_name, render_name, suggest
+from .api.views import object_from_values
+from .models import NamingRule, NamingSeries, ReservedName
+from .naming import follows, number_in_name, render_name, reserve, suggest
 from .report import GROUPS, REPORT_LIMIT, REPORT_SHOWN, build_report, related_fields
 
 #: Most objects a rule page looks at.
@@ -89,9 +91,13 @@ class NamingRuleView(generic.ObjectView):
             (instance._meta.get_field(name).verbose_name, getattr(instance, name).all())
             for name in kind.condition_fields if name != 'match_tags'
         ]
+        user = request.user
         return {
             **overview, 'kind': kind, 'conditions': conditions, 'drifted_table': table,
-            'drifted_count': len(overview['drifted']), 'can_rename': request.user.has_perm(kind.permission('change')),
+            'drifted_count': len(overview['drifted']), 'can_rename': user.has_perm(kind.permission('change')),
+            'reserved': instance.reserved_names.restrict(user, 'view'),
+            'can_reserve': user.has_perm('netbox_naming_convention.add_reservedname'),
+            'can_unreserve': user.has_perm('netbox_naming_convention.delete_reservedname'),
         }
 
 
@@ -238,3 +244,46 @@ class NamingReportRenameView(LoginRequiredMixin, View):
         kind = _kind_from(request)
         back = f"{reverse('plugins:netbox_naming_convention:report')}?object_type={kind.key}"
         return render_rename(request, kind, back)
+
+
+@register_model_view(NamingRule, 'reserve', path='reserve')
+class NamingRuleReserveView(LoginRequiredMixin, View):
+    """Reserve the next names of a rule (from the rule page)."""
+    template_name = 'netbox_naming_convention/reserve.html'
+
+    def _rule(self, request, pk):
+        if not request.user.has_perm('netbox_naming_convention.add_reservedname'):
+            raise PermissionDenied
+        return get_object_or_404(NamingRule.objects.restrict(request.user, 'view'), pk=pk)
+
+    def get(self, request, pk):
+        rule = self._rule(request, pk)
+        return render(request, self.template_name, {'rule': rule, 'form': forms.ReserveForm(rule)})
+
+    def post(self, request, pk):
+        rule = self._rule(request, pk)
+        form = forms.ReserveForm(rule, data=request.POST)
+        if form.is_valid():
+            data = form.cleaned_data
+            values = {key: data[key].pk if data.get(key) else None for key in form.value_fields}
+            obj = object_from_values(request.user, rule.kind, values)
+            reservations, error = reserve(
+                obj, rule, data['count'], expires=data['expires'], description=data['description'],
+                user=request.user,
+            )
+            if error is None:
+                messages.success(request, _('Reserved {names}.').format(names=', '.join(map(str, reservations))))
+                return redirect(rule.get_absolute_url())
+            form.add_error(None, error)
+        return render(request, self.template_name, {'rule': rule, 'form': form})
+
+
+@register_model_view(NamingRule, 'unreserve', path='unreserve')
+class NamingRuleUnreserveView(LoginRequiredMixin, View):
+    """Free the reserved names ticked on the rule page."""
+    def post(self, request, pk):
+        rule = get_object_or_404(NamingRule.objects.restrict(request.user, 'view'), pk=pk)
+        pks = [value for value in request.POST.getlist('pk') if value.isdigit()]
+        deleted, _counts = rule.reserved_names.restrict(request.user, 'delete').filter(pk__in=pks).delete()
+        messages.success(request, _('Freed {n} reserved names.').format(n=deleted))
+        return redirect(rule.get_absolute_url())

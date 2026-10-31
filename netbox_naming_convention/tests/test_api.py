@@ -5,11 +5,15 @@ from django.urls import reverse
 
 from dcim.models import Device
 
-from ..models import NamingRule
+import datetime
+
+from ..models import EnforcementChoices, NamingRule, ReservedName
 from .utils import NetBoxData
 
 SUGGEST = 'plugins-api:netbox_naming_convention-api:suggest'
 RULES = 'plugins-api:netbox_naming_convention-api:namingrule-list'
+RESERVE = 'plugins-api:netbox_naming_convention-api:reserve'
+RESERVATIONS = 'plugins-api:netbox_naming_convention-api:reservedname-list'
 
 
 @override_settings(LOGIN_REQUIRED=True, EXEMPT_VIEW_PERMISSIONS=['*'])
@@ -39,6 +43,33 @@ class APITests(NetBoxData, TestCase):
         response = self.post(reverse('dcim-api:device-list'), [self.device_data(), self.device_data(rack=self.ra9.pk)])
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual([d['name'] for d in response.json()], ['NLUTSWI001_RA8', 'NLUTSWI002_RA9'])
+
+    def test_reserved_names_are_skipped_and_used_up(self):
+        response = self.post(reverse(RESERVE), self.device_data(count=2, description='order 42'))
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual([r['name'] for r in response.json()], ['NLUTSWI001_RA8', 'NLUTSWI002_RA8'])
+        # Nobody else gets the reserved numbers.
+        response = self.post(reverse('dcim-api:device-list'), self.device_data())
+        self.assertEqual(response.json()['name'], 'NLUTSWI003_RA8')
+        # A rule that refuses other names accepts the reserved one, and saving it uses the reservation up.
+        self.switches.enforcement = EnforcementChoices.REFUSE
+        self.switches.save()
+        response = self.post(reverse('dcim-api:device-list'), self.device_data(name='NLUTSWI002_RA8'))
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(list(ReservedName.objects.values_list('name', flat=True)), ['NLUTSWI001_RA8'])
+        response = self.post(reverse('dcim-api:device-list'), self.device_data(name='NLUTSWI001_RA9'))
+        self.assertEqual(response.status_code, 400)  # number 1 is reserved
+        self.assertEqual(self.client.get(reverse(RESERVATIONS)).json()['count'], 1)
+
+    def test_expired_reservations_free_their_number(self):
+        self.switches.fill_gaps = True
+        self.switches.save()
+        yesterday = datetime.date.today() - datetime.timedelta(days=1)
+        response = self.post(reverse(RESERVE), self.device_data(expires=yesterday.isoformat()))
+        self.assertEqual(response.json()[0]['name'], 'NLUTSWI001_RA8')
+        response = self.post(reverse('dcim-api:device-list'), self.device_data())
+        self.assertEqual(response.json()['name'], 'NLUTSWI001_RA8')
+        self.assertFalse(ReservedName.objects.exists())
 
     def test_create_with_tags_rule(self):
         self.rule(roles=[self.router], match_tags=[self.lab], template='NLUTROT{n}', priority=1)
