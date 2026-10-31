@@ -1,5 +1,6 @@
 {% load i18n %}
-<div class="alert alert-{% if assigned or fits %}info{% else %}warning{% endif %}" role="alert">
+{# A name that is fine gets the same border as the cards around it; a warning keeps the tinted one. #}
+<div class="alert {% if assigned or fits %}alert-info border{% else %}alert-warning{% endif %}" role="alert">
   <i class="mdi mdi-format-letter-case"></i>
   {% if assigned.how == 'auto' %}
     {% blocktrans with rule=assigned.rule_name %}The name <strong>{{ name }}</strong> was filled in by the naming rule "{{ rule }}".{% endblocktrans %}
