@@ -82,6 +82,13 @@ class NumberTests(SimpleTestCase):
     def test_fill_gaps(self):
         self.assertEqual(next_number({1, 2, 5}, first=1, last=999, fill_gaps=True, high_water=5), 3)
 
+    def test_released_numbers_come_back_first(self):
+        # 3 was never approved; 4 is skipped; 2 is in use again.
+        released = [2, 3, 4]
+        self.assertEqual(next_number({1, 2, 5}, first=1, last=999, skip=parse_skip('4'), high_water=5,
+                                     released=released), 3)
+        self.assertEqual(next_number({1, 2, 3, 5}, first=1, last=999, high_water=5, released=[2, 3]), 6)
+
     def test_first_number(self):
         self.assertEqual(next_number(set(), first=100, last=999), 100)
 

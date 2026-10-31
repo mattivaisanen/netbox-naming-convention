@@ -10,6 +10,14 @@ New:
 - Letter counter: `{a-z}` or `{A-Z}` in a template counts a to z instead
   of digits, such as `{rack.name}{a-z}` for `R07a`, `R07b`.
 
+Fixed:
+
+- With netbox-change-approval: a device whose create request is rejected,
+  withdrawn, sent back or expires gives its number back to the series. The
+  next device gets it, even with gap filling off and even when later
+  numbers were handed out meanwhile. A device deleted after approval still
+  keeps its number, as before. Nothing changes without change-approval.
+
 ## 0.2.0 (2026-10-26)
 
 New:

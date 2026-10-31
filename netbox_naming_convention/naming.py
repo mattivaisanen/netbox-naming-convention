@@ -8,6 +8,7 @@ suggests, and taking a number for real.
 - `assign()` does it for real while the series row is locked, inside the
   save's transaction, so two objects saved at the same time never get the
   same number. signals.py calls it.
+- `release()` gives back the number of an object that was never approved.
 - `check_typed_name()` is the "refuse" enforcement for names people type.
 - `follows()` tells whether an object's name fits its rule (naming panel,
   the rule's list of objects that don't).
@@ -33,7 +34,7 @@ from .numbering import (
 from .template import NUMBER, TemplateError, filter_name
 
 __all__ = (
-    'Suggestion', 'suggest', 'assign', 'remember', 'check_typed_name', 'follows', 'resolve', 'render_name',
+    'Suggestion', 'suggest', 'assign', 'remember', 'release', 'check_typed_name', 'follows', 'resolve', 'render_name',
     'number_in_name', 'split_name', 'mark_auto', 'is_auto', 'unmark_auto',
 )
 
@@ -183,8 +184,8 @@ def _finish(out, rule, number, member=''):
     return out
 
 
-def _pick(out, rule, obj, high_water, keep_current, taken=None):
-    """Choose the number for a rendered suggestion."""
+def _pick(out, rule, obj, series, keep_current, taken=None):
+    """Choose the number for a rendered suggestion. `series` is its NamingSeries (or None)."""
     scope = rule.number_scope
     used = used_numbers(
         out.prefix, out.suffix, scope, rule.kind.model, exclude_pk=obj.pk, member_suffix=rule.member_suffix,
@@ -230,7 +231,8 @@ def _pick(out, rule, obj, high_water, keep_current, taken=None):
     try:
         number = next_number(
             used, first=rule.number_first, last=rule.last_number, skip=rule.skip_ranges,
-            fill_gaps=rule.fill_gaps, high_water=high_water,
+            fill_gaps=rule.fill_gaps, high_water=series.high_water if series else 0,
+            released=series.released if series else (),
         )
     except NumberError:
         out.error = _('The series {series} is full: no free numbers from {first} to {last}.').format(
@@ -257,8 +259,8 @@ def suggest(obj, rule=None, *, keep_current=True, taken=None):
         out.error = _too_long(out.prefix, rule)
         out.name = None if out.error else out.prefix
         return out
-    high_water = NamingSeries.objects.filter(key=out.series).values_list('high_water', flat=True).first() or 0
-    return _pick(out, rule, obj, high_water, keep_current, taken)
+    series = NamingSeries.objects.filter(key=out.series).first()
+    return _pick(out, rule, obj, series, keep_current, taken)
 
 
 def assign(obj, rule=None):
@@ -285,13 +287,34 @@ def assign(obj, rule=None):
     with transaction.atomic():
         NamingSeries.objects.bulk_create([NamingSeries(key=out.series)], ignore_conflicts=True)
         series = NamingSeries.objects.select_for_update().get(key=out.series)
-        out = _pick(out, rule, obj, series.high_water, keep_current=False)
+        out = _pick(out, rule, obj, series, keep_current=False)
         if out.ready:
             obj.name = out.name
-            if out.number > series.high_water:
-                series.high_water = out.number
-                series.save(update_fields=('high_water', 'last_updated'))
+            _take(series, out.number)
     return out
+
+
+def _take(series, number):
+    """Remember `number` as handed out (`series` is locked)."""
+    if number > series.high_water or number in series.released:
+        series.high_water = max(series.high_water, number)
+        series.released = [n for n in series.released if n != number]
+        series.save(update_fields=('high_water', 'released', 'last_updated'))
+
+
+def _series_number(obj, rule):
+    """(series key, number) of `obj`'s name in its rule's running numbers, or None."""
+    if rule is None or rule.number_source != NumberSourceChoices.SEQUENCE:
+        return None
+    out, has_number = render_name(obj, rule)
+    if not has_number or out.error or out.missing:
+        return None
+    number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope, rule.member_suffix, rule.letters)
+    # A number outside the rule's range was never the rule's to hand out (and
+    # may not even fit the database column, as in SW99999999999).
+    if number is None or not rule.number_first <= number <= rule.last_number:
+        return None
+    return out.series, number
 
 
 def remember(obj, rule=None):
@@ -300,19 +323,34 @@ def remember(obj, rule=None):
     its rule's series, remember the number as handed out (so it does not
     come back after the object is deleted, when gap filling is off).
     """
-    rule = rule or find_rule(obj)
-    if rule is None or rule.number_source != NumberSourceChoices.SEQUENCE:
+    found = _series_number(obj, rule or find_rule(obj))
+    if found is None:
         return
-    out, has_number = render_name(obj, rule)
-    if not has_number or out.error or out.missing:
+    key, number = found
+    with transaction.atomic():
+        NamingSeries.objects.bulk_create([NamingSeries(key=key)], ignore_conflicts=True)
+        _take(NamingSeries.objects.select_for_update().get(key=key), number)
+
+
+def release(obj):
+    """
+    Give back the number of `obj`, which is about to be deleted without ever
+    having been approved (see integrations.awaiting_approval()). The next
+    object of its series gets it, even with gap filling off. Uses the rule
+    that named it when known, as the matching rule may have changed since.
+    """
+    if not obj.name:
         return
-    number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope, rule.member_suffix, rule.letters)
-    # A number outside the rule's range was never the rule's to hand out (and
-    # may not even fit the database column, as in SW99999999999).
-    if number is None or not rule.number_first <= number <= rule.last_number:
+    given = AssignedName.lookup(obj, obj.name)
+    found = _series_number(obj, (given.rule if given else None) or find_rule(obj))
+    if found is None:
         return
-    NamingSeries.objects.bulk_create([NamingSeries(key=out.series)], ignore_conflicts=True)
-    NamingSeries.objects.filter(key=out.series, high_water__lt=number).update(high_water=number)
+    key, number = found
+    with transaction.atomic():
+        series = NamingSeries.objects.select_for_update().filter(key=key).first()
+        if series is not None and number not in series.released:
+            series.released = sorted([*series.released, number])
+            series.save(update_fields=('released', 'last_updated'))
 
 
 def follows(obj, rule=None):

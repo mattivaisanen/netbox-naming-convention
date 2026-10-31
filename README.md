@@ -38,7 +38,8 @@ Everything below works the same for devices, virtual machines and racks;
 - **Running numbers per series.** Each rule sets the digits (001 or 0001),
   the first and last number, numbers that are never handed out, and whether
   numbers of deleted devices are reused (gap filling). Without gap filling a
-  deleted device's number never comes back.
+  deleted device's number never comes back (numbers of devices that were
+  never approved in netbox-change-approval do).
 - **Numbers from the IP**, instead of running numbers: a mask such as
   `*.*.*.N` takes the last octet of the device's primary IP, so with the
   template `sw{n}` the device with 10.0.0.6 is `sw006`. The plugin never
@@ -251,7 +252,11 @@ take their number from an IP (they have none).
 Naming rules are ordinary NetBox objects, so changes to them need approval
 like changes to any other object. A new device is written at once by
 change-approval (marked pending), so it gets its name and number right
-away; a rename waits for approval. Above the changes, the change request
+away; a rename waits for approval. While the request is open the number
+counts as used. If the request is rejected, withdrawn, sent back or expires,
+the device is removed and its number goes back to the series: the next
+device gets it, even with gap filling off and even when later numbers were
+handed out meanwhile. Above the changes, the change request
 page says whether the name was filled in by the rule, follows it, or
 doesn't (and what the rule suggests). The plugin's own records (numbers handed out, names
 given) are never gated.
