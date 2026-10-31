@@ -1,4 +1,4 @@
-"""Shared test data: a Tampere site with switches and routers."""
+"""Shared test data: a Utrecht site with switches and routers."""
 from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Rack, Region, Site
 from extras.models import Tag
 
@@ -32,23 +32,23 @@ class NetBoxData:
 
     @classmethod
     def make_netbox(cls):
-        cls.finland = Region.objects.create(name='Finland', slug='finland')
-        cls.tampere = Site.objects.create(name='Tampere', slug='tampere', region=cls.finland)
-        cls.helsinki = Site.objects.create(name='Helsinki', slug='helsinki', region=cls.finland)
-        cls.jk8 = Rack.objects.create(name='JK8', site=cls.tampere)
-        cls.jk9 = Rack.objects.create(name='JK9', site=cls.tampere)
+        cls.holland = Region.objects.create(name='Holland', slug='holland')
+        cls.utrecht = Site.objects.create(name='Utrecht', slug='utrecht', region=cls.holland)
+        cls.nijmegen = Site.objects.create(name='Nijmegen', slug='nijmegen', region=cls.holland)
+        cls.ra8 = Rack.objects.create(name='RA8', site=cls.utrecht)
+        cls.ra9 = Rack.objects.create(name='RA9', site=cls.utrecht)
         cls.switch = DeviceRole.objects.create(name='Switch', slug='switch')
         cls.access = DeviceRole.objects.create(name='Access', slug='access', parent=cls.switch)
         cls.router = DeviceRole.objects.create(name='Router', slug='router')
         cls.printer = DeviceRole.objects.create(name='Printer', slug='printer')
         maker = Manufacturer.objects.create(name='Cisco', slug='cisco')
         cls.c9300 = DeviceType.objects.create(manufacturer=maker, model='C9300-48P', slug='c9300-48p')
-        cls.ot = Tag.objects.create(name='ot', slug='ot')
+        cls.lab = Tag.objects.create(name='lab', slug='lab')
 
     @classmethod
     def rule(cls, roles=(), device_types=(), sites=(), match_tags=(), **fields):
         fields.setdefault('name', f'Rule {NamingRule.objects.count() + 1}')
-        fields.setdefault('template', 'FI{site.name|first:2|upper}{role.parent.name|first:3|upper}{n}_{rack.name}')
+        fields.setdefault('template', 'NL{site.name|first:2|upper}{role.parent.name|first:3|upper}{n}_{rack.name}')
         rule = NamingRule.objects.create(**fields)
         rule.roles.set(roles)
         rule.device_types.set(device_types)
@@ -58,7 +58,7 @@ class NetBoxData:
 
     def device(self, name=None, site=None, role=None, rack=None, save=True, tags=(), **fields):
         device = Device(
-            name=name, site=site or self.tampere, role=role or self.access, device_type=self.c9300,
+            name=name, site=site or self.utrecht, role=role or self.access, device_type=self.c9300,
             rack=rack, **fields,
         )
         if tags:

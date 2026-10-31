@@ -8,11 +8,15 @@ suggests, and taking a number for real.
 - `assign()` does it for real while the series row is locked, inside the
   save's transaction, so two objects saved at the same time never get the
   same number. signals.py calls it.
+- `release()` gives back the number of an object that was never approved.
 - `check_typed_name()` is the "refuse" enforcement for names people type.
 - `follows()` tells whether an object's name fits its rule (naming panel,
   the rule's list of objects that don't).
 - `reserve()` takes names ahead of time, before their objects exist. Their
   numbers count as used until the reservation is used up or expires.
+
+A rule's member suffix (such as "-#") lets stack members share a number:
+SW005-1 and SW005-2 both follow the rule SW{n} and both are number 5.
 """
 import re
 from contextvars import ContextVar
@@ -24,16 +28,18 @@ from django.utils.translation import gettext as _
 from netbox.context import current_request
 
 from .kinds import prepare
-from .matching import _related, find_rule
+from .matching import find_rule, related_object
 from .models import AssignedName, NamingSeries, NumberSourceChoices, ReservedName
 from .numbering import (
-    NumberError, is_skipped, name_regex, next_number, number_from_ip, series_key, used_numbers,
+    NumberError, is_skipped, name_regex, next_number, number_from_ip, read_number, series_key, used_numbers,
 )
 from .template import NUMBER, TemplateError, filter_name
 
 __all__ = (
-    'Suggestion', 'suggest', 'assign', 'reserve', 'check_typed_name', 'follows', 'resolve', 'mark_auto', 'is_auto',
+    'Suggestion', 'suggest', 'assign', 'remember', 'release', 'reserve', 'check_typed_name', 'follows', 'resolve',
+    'render_name', 'number_in_name', 'split_name', 'mark_auto', 'is_auto', 'unmark_auto',
 )
+
 
 @dataclass
 class Suggestion:
@@ -75,7 +81,7 @@ def resolve(obj, path, kind):
     """The value of a template path (see template.py) for `obj` of `kind`, or ''."""
     root, *rest = path
     for step in kind.roots[root]:
-        obj = _related(obj, step)
+        obj = related_object(obj, step)
         if obj is None:
             return ''
     i = 0
@@ -96,17 +102,22 @@ def resolve(obj, path, kind):
 
 
 def _primary_ip(obj):
-    return _related(obj, 'primary_ip4') or _related(obj, 'primary_ip6')
+    return related_object(obj, 'primary_ip4') or related_object(obj, 'primary_ip6')
 
 
 def _has_value(obj, key):
     """Whether a field the rule waits for (RequiredValueChoices) is set."""
     if obj._meta.get_field(key).is_relation:
-        return _related(obj, key) is not None
+        return related_object(obj, key) is not None
     return bool(getattr(obj, key, None))
 
 
-def _render(obj, rule, waits=True):
+def _counter_pattern(rule):
+    """How the number shows in a pattern: ### for 3 digits, [a-z] or [A-Z] for a letter."""
+    return {'lower': '[a-z]', 'upper': '[A-Z]'}.get(rule.counter, '#' * rule.number_digits)
+
+
+def render_name(obj, rule, waits=True):
     """
     (Suggestion with prefix/suffix/series/missing filled in, has_number).
     `waits=False` leaves out the rule's *Wait for* fields (reserving names
@@ -127,7 +138,7 @@ def _render(obj, rule, waits=True):
     # Fields the rule waits for, in the rule's order, before the template's own.
     waiting = [key for key in rule.required_values if key in kind.wait_for and not _has_value(obj, key)] if waits else []
     out.missing = waiting + [m for m in rendered.missing if m not in waiting]
-    out.pattern = filter_name(rendered.pattern, filters).replace(NUMBER, '#' * rule.number_digits)
+    out.pattern = filter_name(rendered.pattern, filters).replace(NUMBER, _counter_pattern(rule))
     if template.has_number:
         out.series = series_key(out.prefix, out.suffix, rule.number_scope, kind.key)
     if template.has_number and rule.number_source == NumberSourceChoices.IP and _primary_ip(obj) is None:
@@ -135,12 +146,27 @@ def _render(obj, rule, waits=True):
     return out, template.has_number
 
 
-def _number_of(name, prefix, suffix, scope):
+def number_in_name(name, prefix, suffix, scope, member_suffix='', letters=False):
     """The number in an existing name of this series, or None."""
     if not name:
         return None
-    match = re.match(name_regex(prefix, suffix, scope), name, re.IGNORECASE)
-    return int(match.group(1)) if match else None
+    match = re.match(name_regex(prefix, suffix, scope, member_suffix, letters), name, re.IGNORECASE)
+    return read_number(match.group(1)) if match else None
+
+
+def split_name(name, prefix, suffix, member_suffix='', letters=False):
+    """
+    A name that is exactly prefix + number + suffix, optionally followed by
+    the rule's member suffix: (number, number as written, member ending),
+    such as (5, '005', '-1') for SW005-1. None for any other name.
+    """
+    if not name:
+        return None
+    match = re.match(name_regex(prefix, suffix, 'name', member_suffix, letters), name, re.IGNORECASE)
+    if not match:
+        return None
+    member = (match.group(2) or '') if member_suffix else ''
+    return read_number(match.group(1)), match.group(1), member
 
 
 def _too_long(name, rule):
@@ -165,19 +191,22 @@ def _reserved(series, name=None):
     return set(rows.values_list('number', flat=True))
 
 
-def _finish(out, rule, number):
+def _finish(out, rule, number, member=''):
     out.number = number
-    name = out.prefix + rule.format_number(number) + out.suffix
+    name = out.prefix + rule.format_number(number) + out.suffix + member
     out.error = _too_long(name, rule)
     if out.error is None:
         out.name = name
     return out
 
 
-def _pick(out, rule, obj, high_water, keep_current, taken=None):
-    """Choose the number for a rendered suggestion."""
+def _pick(out, rule, obj, series, keep_current, taken=None):
+    """Choose the number for a rendered suggestion. `series` is its NamingSeries (or None)."""
     scope = rule.number_scope
-    used = used_numbers(out.prefix, out.suffix, scope, rule.kind.model, exclude_pk=obj.pk)
+    used = used_numbers(
+        out.prefix, out.suffix, scope, rule.kind.model, exclude_pk=obj.pk, member_suffix=rule.member_suffix,
+        letters=rule.letters,
+    )
     used = set(used) | _reserved(out.series, obj.name)
     if taken:
         used = set(used) | taken.get(out.series, set())
@@ -204,15 +233,23 @@ def _pick(out, rule, obj, high_water, keep_current, taken=None):
         # gave it, while nobody else has it.
         earlier = AssignedName.of(obj).exclude(name=obj.name or '')
         for name in [obj.name, *earlier.values_list('name', flat=True)]:
-            current = _number_of(name, out.prefix, out.suffix, scope)
-            if (current is not None and current not in used and rule.number_first <= current <= rule.last_number
+            # A stack member (SW005-1) keeps its number and its ending, even
+            # though the other members of the stack use the same number.
+            parts = split_name(name, out.prefix, out.suffix, rule.member_suffix, rule.letters)
+            member = parts[2] if parts else ''
+            current = parts[0] if member else number_in_name(
+                name, out.prefix, out.suffix, scope, letters=rule.letters,
+            )
+            if (current is not None and (member or current not in used)
+                    and rule.number_first <= current <= rule.last_number
                     and not is_skipped(current, rule.skip_ranges)):
                 out.kept_number = True
-                return _finish(out, rule, current)
+                return _finish(out, rule, current, member)
     try:
         number = next_number(
             used, first=rule.number_first, last=rule.last_number, skip=rule.skip_ranges,
-            fill_gaps=rule.fill_gaps, high_water=high_water,
+            fill_gaps=rule.fill_gaps, high_water=series.high_water if series else 0,
+            released=series.released if series else (),
         )
     except NumberError:
         out.error = _('The series {series} is full: no free numbers from {first} to {last}.').format(
@@ -232,15 +269,15 @@ def suggest(obj, rule=None, *, keep_current=True, taken=None):
     rule = rule or find_rule(obj)
     if rule is None:
         return Suggestion()
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if out.error or out.missing:
         return out
     if not has_number:
         out.error = _too_long(out.prefix, rule)
         out.name = None if out.error else out.prefix
         return out
-    high_water = NamingSeries.objects.filter(key=out.series).values_list('high_water', flat=True).first() or 0
-    return _pick(out, rule, obj, high_water, keep_current, taken)
+    series = NamingSeries.objects.filter(key=out.series).first()
+    return _pick(out, rule, obj, series, keep_current, taken)
 
 
 def assign(obj, rule=None):
@@ -256,7 +293,7 @@ def assign(obj, rule=None):
     rule = rule or find_rule(obj)
     if rule is None:
         return Suggestion()
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if out.error or out.missing:
         return out
     if not has_number:
@@ -267,13 +304,34 @@ def assign(obj, rule=None):
     with transaction.atomic():
         NamingSeries.objects.bulk_create([NamingSeries(key=out.series)], ignore_conflicts=True)
         series = NamingSeries.objects.select_for_update().get(key=out.series)
-        out = _pick(out, rule, obj, series.high_water, keep_current=False)
+        out = _pick(out, rule, obj, series, keep_current=False)
         if out.ready:
             obj.name = out.name
-            if out.number > series.high_water:
-                series.high_water = out.number
-                series.save(update_fields=('high_water', 'last_updated'))
+            _take(series, out.number)
     return out
+
+
+def _take(series, number):
+    """Remember `number` as handed out (`series` is locked)."""
+    if number > series.high_water or number in series.released:
+        series.high_water = max(series.high_water, number)
+        series.released = [n for n in series.released if n != number]
+        series.save(update_fields=('high_water', 'released', 'last_updated'))
+
+
+def _series_number(obj, rule):
+    """(series key, number) of `obj`'s name in its rule's running numbers, or None."""
+    if rule is None or rule.number_source != NumberSourceChoices.SEQUENCE:
+        return None
+    out, has_number = render_name(obj, rule)
+    if not has_number or out.error or out.missing:
+        return None
+    number = number_in_name(obj.name, out.prefix, out.suffix, rule.number_scope, rule.member_suffix, rule.letters)
+    # A number outside the rule's range was never the rule's to hand out (and
+    # may not even fit the database column, as in SW99999999999).
+    if number is None or not rule.number_first <= number <= rule.last_number:
+        return None
+    return out.series, number
 
 
 #: Most names reserved in one go.
@@ -291,7 +349,7 @@ def reserve(obj, rule, count=1, *, expires=None, description='', user=None):
         return [], _('A rule that reads its number from the IP can\'t reserve names.')
     if not 1 <= count <= RESERVE_LIMIT:
         return [], _('Reserve from 1 to {n} names at a time.').format(n=RESERVE_LIMIT)
-    out, has_number = _render(obj, rule, waits=False)
+    out, has_number = render_name(obj, rule, waits=False)
     if out.error:
         return [], out.error
     if out.missing:
@@ -309,7 +367,7 @@ def reserve(obj, rule, count=1, *, expires=None, description='', user=None):
         ReservedName.objects.filter(series=out.series).exclude(pk__in=ReservedName.objects.active()).delete()
         taken, picked = {}, []
         for _i in range(count):
-            hint = _pick(replace(out), rule, obj, series.high_water, keep_current=False, taken=taken)
+            hint = _pick(replace(out), rule, obj, series, keep_current=False, taken=taken)
             if not hint.ready:
                 return [], hint.error
             taken.setdefault(out.series, set()).add(hint.number)
@@ -317,10 +375,8 @@ def reserve(obj, rule, count=1, *, expires=None, description='', user=None):
         reservations = ReservedName.objects.bulk_create([
             ReservedName(name=hint.name, series=out.series, number=hint.number, **fields) for hint in picked
         ])
-        highest = max(hint.number for hint in picked)
-        if highest > series.high_water:
-            series.high_water = highest
-            series.save(update_fields=('high_water', 'last_updated'))
+        for hint in picked:
+            _take(series, hint.number)
     return reservations, None
 
 
@@ -348,19 +404,34 @@ def remember(obj, rule=None):
     its rule's series, remember the number as handed out (so it does not
     come back after the object is deleted, when gap filling is off).
     """
-    rule = rule or find_rule(obj)
-    if rule is None or rule.number_source != NumberSourceChoices.SEQUENCE:
+    found = _series_number(obj, rule or find_rule(obj))
+    if found is None:
         return
-    out, has_number = _render(obj, rule)
-    if not has_number or out.error or out.missing:
+    key, number = found
+    with transaction.atomic():
+        NamingSeries.objects.bulk_create([NamingSeries(key=key)], ignore_conflicts=True)
+        _take(NamingSeries.objects.select_for_update().get(key=key), number)
+
+
+def release(obj):
+    """
+    Give back the number of `obj`, which is about to be deleted without ever
+    having been approved (see integrations.awaiting_approval()). The next
+    object of its series gets it, even with gap filling off. Uses the rule
+    that named it when known, as the matching rule may have changed since.
+    """
+    if not obj.name:
         return
-    number = _number_of(obj.name, out.prefix, out.suffix, rule.number_scope)
-    # A number outside the rule's range was never the rule's to hand out (and
-    # may not even fit the database column, as in SW99999999999).
-    if number is None or not rule.number_first <= number <= rule.last_number:
+    given = AssignedName.lookup(obj, obj.name)
+    found = _series_number(obj, (given.rule if given else None) or find_rule(obj))
+    if found is None:
         return
-    NamingSeries.objects.bulk_create([NamingSeries(key=out.series)], ignore_conflicts=True)
-    NamingSeries.objects.filter(key=out.series, high_water__lt=number).update(high_water=number)
+    key, number = found
+    with transaction.atomic():
+        series = NamingSeries.objects.select_for_update().filter(key=key).first()
+        if series is not None and number not in series.released:
+            series.released = sorted([*series.released, number])
+            series.save(update_fields=('released', 'last_updated'))
 
 
 def follows(obj, rule=None):
@@ -368,7 +439,7 @@ def follows(obj, rule=None):
     rule = rule or find_rule(obj)
     if rule is None:
         return None, None
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if out.error:
         return rule, False
     if out.missing and out.missing != ['primary IP']:
@@ -376,13 +447,19 @@ def follows(obj, rule=None):
     name = obj.name or ''
     if not has_number:
         return rule, name.lower() == out.prefix.lower()
-    number = _number_of(name, out.prefix, out.suffix, 'name')
-    if number is None or len(name) - len(out.prefix) - len(out.suffix) < rule.number_digits:
+    parts = split_name(name, out.prefix, out.suffix, rule.member_suffix, rule.letters)
+    # A letter is always one character; digits must be padded to the rule's digits.
+    if parts is None or (not rule.letters and len(parts[1]) < rule.number_digits):
         return rule, False
+    number = parts[0]
     if rule.number_source == NumberSourceChoices.IP:
         ip = _primary_ip(obj)
+        if ip is None:
+            # No primary IP yet (as on every new device): only the shape of
+            # the name can be checked.
+            return rule, True
         try:
-            return rule, ip is not None and number_from_ip(rule.ip_pattern, ip.address) == number
+            return rule, number_from_ip(rule.ip_pattern, ip.address) == number
         except NumberError:
             return rule, False
     return rule, rule.number_first <= number <= rule.last_number
@@ -393,23 +470,29 @@ def check_typed_name(obj, rule):
     For rules that refuse names that don't fit: an error message for a name
     typed by hand, or None when it is fine.
     """
-    out, has_number = _render(obj, rule)
+    out, has_number = render_name(obj, rule)
     if out.error:
         return out.error
     if out.missing and out.missing != ['primary IP']:
         return _('The rule "{rule}" needs a value for: {missing}.').format(rule=rule, missing=', '.join(out.missing))
     _rule, fits = follows(obj, rule)
-    example = suggest(obj, rule)
     if not fits:
+        example = suggest(obj, rule)
         hint = _(' Leave the name empty to get {name}.').format(name=example.name) if example.ready else ''
         return _('The name does not follow the rule "{rule}".').format(rule=rule) + hint
     if has_number:
-        number = _number_of(obj.name, out.prefix, out.suffix, 'name')
+        number, _text, member = split_name(obj.name, out.prefix, out.suffix, rule.member_suffix, rule.letters)
         if is_skipped(number, rule.skip_ranges):
             return _('Number {number} is never handed out by the rule "{rule}".').format(
                 number=rule.format_number(number), rule=rule,
             )
-        if number in used_numbers(out.prefix, out.suffix, rule.number_scope, rule.kind.model, exclude_pk=obj.pk):
+        # Stack members share their number on purpose; NetBox itself refuses
+        # two objects with the very same name.
+        used = used_numbers(
+            out.prefix, out.suffix, rule.number_scope, rule.kind.model, exclude_pk=obj.pk,
+            member_suffix=rule.member_suffix, letters=rule.letters,
+        )
+        if not member and number in used:
             return _taken(rule, number, out.prefix)
         if number in _reserved(out.series, obj.name):
             return _('Number {number} of {series} is reserved for another name.').format(

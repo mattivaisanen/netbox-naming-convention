@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netbox-naming-convention"
-version = "0.1.0"
-description = "Name NetBox devices from rules, with running numbers per series."
+version = "0.2.0"
+description = "Name devices, virtual machines and racks from rules, with running numbers per series."
 requires-python = ">=3.10"
 license = "Apache-2.0"
 readme = "README.md"

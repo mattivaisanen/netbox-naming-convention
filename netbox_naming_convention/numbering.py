@@ -10,29 +10,55 @@ Used numbers come from the names objects of the rule's kind have in NetBox, comp
 case, so names given before the rule existed count. With gap filling off,
 the series also remembers the highest number it ever handed out
 (NamingSeries.high_water), so the number of a deleted device never comes
-back.
+back. Numbers of devices that were never approved (NamingSeries.released)
+are the exception: they are handed out again first.
+
+A rule counts in digits ({n}: 001, 002, ...) or in letters ({a-z} or
+{A-Z}: a is 1, b is 2, ... z is 26). Numbers are whole numbers either way;
+only how they are written in the name differs (`letters=True`).
 """
 import ipaddress
 import re
 
 __all__ = (
-    'NumberError', 'parse_skip', 'series_key', 'name_regex', 'used_numbers', 'next_number',
-    'number_from_ip', 'parse_ip_pattern',
+    'NumberError', 'parse_skip', 'series_key', 'member_regex', 'name_regex', 'used_numbers', 'next_number',
+    'number_from_ip', 'parse_ip_pattern', 'LETTERS', 'letter', 'read_number',
 )
 
 #: Longest a number may be, in digits.
 MAX_DIGITS = 9
+
+#: The letters a letter counter goes through, a (1) to z (26).
+LETTERS = 'abcdefghijklmnopqrstuvwxyz'
+
+
+def letter(number):
+    """1 -> 'a', 26 -> 'z'."""
+    return LETTERS[number - 1]
+
+
+def read_number(text):
+    """The number a counter in a name stands for: '007' -> 7, 'c' or 'C' -> 3."""
+    if text.isdigit():
+        return int(text)
+    return LETTERS.index(text.lower()) + 1
 
 
 class NumberError(ValueError):
     pass
 
 
-def parse_skip(text):
+def parse_skip(text, letters=False):
     """
     "0, 100-199, 666" -> a list of (low, high) ranges. Raises NumberError on
-    anything else.
+    anything else. With `letters`, letters work too: "i, o, x-z".
     """
+    def value(item):
+        item = item.strip()
+        if letters and len(item) == 1 and item.lower() in LETTERS:
+            return read_number(item)
+        return int(item)
+
     ranges = []
     for item in (text or '').replace(';', ',').split(','):
         item = item.strip()
@@ -40,8 +66,8 @@ def parse_skip(text):
             continue
         low, sep, high = item.partition('-')
         try:
-            low = int(low)
-            high = int(high) if sep else low
+            low = value(low)
+            high = value(high) if sep else low
         except ValueError:
             raise NumberError(f'"{item}" is not a number or a range such as 100-199.') from None
         if low < 0 or high < low:
@@ -75,21 +101,40 @@ def series_key(prefix, suffix, scope, kind='device'):
     return f'{kind}:{text.lower()}'
 
 
-def name_regex(prefix, suffix, scope):
+def member_regex(member_suffix):
+    """
+    A rule's member suffix as a regular expression: literal text where # is
+    one or more digits ("-#" matches "-1", "-12"). Empty for no suffix.
+    """
+    if not member_suffix:
+        return ''
+    return ''.join(r'[0-9]+' if char == '#' else re.escape(char) for char in member_suffix)
+
+
+def name_regex(prefix, suffix, scope, member_suffix='', letters=False):
     """
     A regular expression that matches the names of a series and captures
-    their number. For PostgreSQL (`name__iregex`) and Python alike.
+    their number. For PostgreSQL (`name__iregex`) and Python alike, both
+    without case.
+
+    With a member suffix ("-#"), names of stack members such as SW005-1
+    match too and count as number 5. With `letters`, the number is one
+    letter (RA8c is number 3 of RA8).
     """
+    counter, other = ('([a-z])', 'a-z') if letters else ('([0-9]+)', '0-9')
     if scope == 'name':
-        return '^' + re.escape(prefix) + r'([0-9]+)' + re.escape(suffix) + '$'
+        member = member_regex(member_suffix)
+        member = f'({member})?' if member else ''
+        return '^' + re.escape(prefix) + counter + re.escape(suffix) + member + '$'
     # Shared scope: whatever follows the number is decoration, but it must not
-    # be another digit (AMS1-SW1540 is number 1540, not 154).
-    return '^' + re.escape(prefix) + r'([0-9]+)([^0-9]|$)'
+    # be another digit (AMS1-SW1540 is number 1540, not 154), or another
+    # letter for a letter counter (RA8ab is not number 1 of RA8).
+    return '^' + re.escape(prefix) + counter + f'([^{other}]|$)'
 
 
-def used_numbers(prefix, suffix, scope, model, exclude_pk=None):
+def used_numbers(prefix, suffix, scope, model, exclude_pk=None, member_suffix='', letters=False):
     """Numbers objects of `model` (Device, VirtualMachine, Rack) already have in this series."""
-    pattern = name_regex(prefix, suffix, scope)
+    pattern = name_regex(prefix, suffix, scope, member_suffix, letters)
     names = model.objects.filter(name__iregex=pattern)
     if exclude_pk:
         names = names.exclude(pk=exclude_pk)
@@ -98,17 +143,18 @@ def used_numbers(prefix, suffix, scope, model, exclude_pk=None):
     for name in names.values_list('name', flat=True):
         match = compiled.match(name)
         if match:
-            used.add(int(match.group(1)))
+            used.add(read_number(match.group(1)))
     return used
 
 
-def next_number(used, *, first, last, skip=(), fill_gaps=False, high_water=0):
+def next_number(used, *, first, last, skip=(), fill_gaps=False, high_water=0, released=()):
     """
     The number to hand out next, or NumberError when the series is full.
 
     - Gap filling on: the lowest free number from `first` on.
-    - Gap filling off: one more than the highest number in use or ever handed
-      out (`high_water`), and at least `first`.
+    - Gap filling off: the lowest `released` number that is free again (its
+      device was never approved), otherwise one more than the highest number
+      in use or ever handed out (`high_water`), and at least `first`.
 
     Numbers above `last` (a name typed by hand, such as SW5000 in a 3-digit
     series) are outside the range and don't count. Skipped ranges are jumped
@@ -122,6 +168,9 @@ def next_number(used, *, first, last, skip=(), fill_gaps=False, high_water=0):
                 return number
             number = _past_skipped(number + 1, skip)
     else:
+        for number in sorted(released):
+            if first <= number <= last and number not in used and not is_skipped(number, skip):
+                return number
         number = _past_skipped(max([first - 1, high_water, *used]) + 1, skip)
         if number <= last:
             return number

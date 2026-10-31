@@ -74,8 +74,7 @@ def object_from_values(user, kind, values):
 
 
 def _check_perm(user, kind):
-    app_label, model_name = kind.model_label.split('.')
-    if not (user.has_perm(f'{app_label}.add_{model_name}') or user.has_perm(f'{app_label}.change_{model_name}')):
+    if not (user.has_perm(kind.permission('add')) or user.has_perm(kind.permission('change'))):
         raise PermissionDenied(_('Suggesting names needs permission to add or change {kinds}.').format(
             kinds=kind.label_plural,
         ))

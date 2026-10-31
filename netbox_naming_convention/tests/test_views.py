@@ -7,7 +7,7 @@ from django.urls import reverse
 from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
 
-from core.models import ObjectChange
+from core.models import ObjectChange, ObjectType
 
 from .. import reference, template
 from ..kinds import KINDS
@@ -22,32 +22,46 @@ class ViewTests(NetBoxData, TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.make_netbox()
-        cls.switches = cls.rule(roles=[cls.switch], sites=[cls.tampere], name='Tampere switches')
+        cls.switches = cls.rule(roles=[cls.switch], sites=[cls.utrecht], name='Utrecht switches')
         cls.user = get_user_model().objects.create(username='admin', is_superuser=True)
 
     def setUp(self):
         self.client.force_login(self.user)
 
     def test_rule_pages(self):
-        self.device(rack=self.jk8)
-        Device.objects.create(name='old-switch', site=self.tampere, role=self.access, device_type=self.c9300,
-                              rack=self.jk8)
+        self.device(rack=self.ra8)
+        Device.objects.create(name='old-switch', site=self.utrecht, role=self.access, device_type=self.c9300,
+                              rack=self.ra8)
         self.assertEqual(self.client.get(reverse(URL + 'namingrule_list')).status_code, 200)
         page = self.client.get(self.switches.get_absolute_url())
-        self.assertContains(page, 'FITASWI002_JK8')  # next name of the series
+        self.assertContains(page, 'NLUTSWI002_RA8')  # next name of the series
         self.assertContains(page, 'old-switch')  # does not follow the rule
         self.assertEqual(self.client.get(reverse(URL + 'namingrule_add')).status_code, 200)
 
+    def test_rule_page_lists_only_objects_the_user_may_view(self):
+        from users.models import ObjectPermission
+
+        Device.objects.create(name='hidden-switch', site=self.utrecht, role=self.access, device_type=self.c9300)
+        user = get_user_model().objects.create(username='rules-only')
+        permission = ObjectPermission.objects.create(name='View rules', actions=['view'])
+        permission.object_types.add(ObjectType.objects.get_for_model(NamingRule))
+        permission.users.add(user)
+        self.client.force_login(user)
+        with override_settings(EXEMPT_VIEW_PERMISSIONS=[]):
+            page = self.client.get(self.switches.get_absolute_url())
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, 'hidden-switch')
+
     def test_rule_form(self):
         response = self.client.post(reverse(URL + 'namingrule_add'), {
-            'name': 'Printers', 'template': 'FITAPRN{n}', 'priority': 100, 'enabled': 'on',
+            'name': 'Printers', 'template': 'NLUTPRN{n}', 'priority': 100, 'enabled': 'on',
             'number_source': 'sequence', 'number_digits': 3, 'number_first': 1, 'number_scope': 'shared',
             'enforcement': 'warn', 'tag_match': 'all',
         })
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'needs at least one role')
         response = self.client.post(reverse(URL + 'namingrule_add'), {
-            'name': 'Printers', 'template': 'FITAPRN{n}', 'priority': 100, 'enabled': 'on',
+            'name': 'Printers', 'template': 'NLUTPRN{n}', 'priority': 100, 'enabled': 'on',
             'roles': [self.printer.pk], 'number_source': 'sequence', 'number_digits': 3, 'number_first': 1,
             'number_scope': 'shared', 'enforcement': 'warn', 'tag_match': 'all',
         })
@@ -57,10 +71,18 @@ class ViewTests(NetBoxData, TestCase):
     def test_device_form_has_the_helper(self):
         page = self.client.get(reverse('dcim:device_add'))
         self.assertContains(page, "var MODE = 'add'")
-        device = self.device(rack=self.jk8)
+        device = self.device(rack=self.ra8)
         page = self.client.get(reverse('dcim:device_edit', args=[device.pk]))
         self.assertContains(page, "var MODE = 'edit'")
         self.assertNotContains(self.client.get(reverse('dcim:site_add')), 'var MODE')
+
+    def test_vm_form_helper_survives_the_form_being_redrawn(self):
+        # Choosing a VM type redraws the form's fields through HTMX; the
+        # helper must find the new name field (checked in a browser too).
+        self.rule(object_type='virtualmachine', template='VM{n}', name='VMs')
+        page = self.client.get(reverse('virtualization:virtualmachine_add'))
+        self.assertContains(page, "var TYPE = 'virtualmachine'")
+        self.assertContains(page, "addEventListener('htmx:afterSettle'")
 
     def test_device_form_helper_can_be_turned_off(self):
         plugins_config = {**settings.PLUGINS_CONFIG, 'netbox_naming_convention': {
@@ -71,50 +93,50 @@ class ViewTests(NetBoxData, TestCase):
 
     def test_device_form_without_name(self):
         response = self.client.post(reverse('dcim:device_add'), {
-            'site': self.tampere.pk, 'role': self.access.pk, 'device_type': self.c9300.pk, 'rack': self.jk8.pk,
+            'site': self.utrecht.pk, 'role': self.access.pk, 'device_type': self.c9300.pk, 'rack': self.ra8.pk,
             'status': DeviceStatusChoices.STATUS_ACTIVE, 'airflow': '', 'face': '',
         })
         self.assertEqual(response.status_code, 302, response.content[:3000])
-        self.assertEqual(Device.objects.get().name, 'FITASWI001_JK8')
+        self.assertEqual(Device.objects.get().name, 'NLUTSWI001_RA8')
 
     def test_device_form_with_the_rules_name_takes_a_free_number(self):
-        # The form showed FITASWI001_JK8, but someone saved that number meanwhile.
-        self.device(rack=self.jk8)
+        # The form showed NLUTSWI001_RA8, but someone saved that number meanwhile.
+        self.device(rack=self.ra8)
         response = self.client.post(reverse('dcim:device_add'), {
-            'name': 'FITASWI001_JK8', '_naming_auto': '1',
-            'site': self.tampere.pk, 'role': self.access.pk, 'device_type': self.c9300.pk, 'rack': self.jk8.pk,
+            'name': 'NLUTSWI001_RA8', '_naming_auto': '1',
+            'site': self.utrecht.pk, 'role': self.access.pk, 'device_type': self.c9300.pk, 'rack': self.ra8.pk,
             'status': DeviceStatusChoices.STATUS_ACTIVE,
         })
         self.assertEqual(response.status_code, 302, response.content[:3000])
-        self.assertTrue(Device.objects.filter(name='FITASWI002_JK8').exists())
+        self.assertTrue(Device.objects.filter(name='NLUTSWI002_RA8').exists())
 
     def test_device_form_typed_name_is_kept(self):
         response = self.client.post(reverse('dcim:device_add'), {
-            'name': 'my-switch', 'site': self.tampere.pk, 'role': self.access.pk, 'device_type': self.c9300.pk,
-            'rack': self.jk8.pk, 'status': DeviceStatusChoices.STATUS_ACTIVE,
+            'name': 'my-switch', 'site': self.utrecht.pk, 'role': self.access.pk, 'device_type': self.c9300.pk,
+            'rack': self.ra8.pk, 'status': DeviceStatusChoices.STATUS_ACTIVE,
         })
         self.assertEqual(response.status_code, 302)
         self.assertTrue(Device.objects.filter(name='my-switch').exists())
 
     def test_device_panel(self):
-        device = self.device(rack=self.jk8)
+        device = self.device(rack=self.ra8)
         page = self.client.get(device.get_absolute_url())
         self.assertContains(page, 'follows the rule')
-        device.rack = self.jk9
+        device.rack = self.ra9
         device.save()
         page = self.client.get(device.get_absolute_url())
         self.assertContains(page, 'does not follow the rule')
-        self.assertContains(page, 'FITASWI001_JK9')
+        self.assertContains(page, 'NLUTSWI001_RA9')
 
     def test_csv_import_without_names(self):
         csv = 'site,role,device_type,manufacturer,rack,status\n' + '\n'.join(
-            f'Tampere,Access,C9300-48P,Cisco,{rack},active' for rack in ('JK8', 'JK9')
+            f'Utrecht,Access,C9300-48P,Cisco,{rack},active' for rack in ('RA8', 'RA9')
         )
         response = self.client.post(reverse('dcim:device_bulk_import'), {'data': csv, 'format': 'csv',
                                                                          'csv_delimiter': ','})
         self.assertEqual(response.status_code, 302, response.content[:3000])
         self.assertEqual(sorted(Device.objects.values_list('name', flat=True)),
-                         ['FITASWI001_JK8', 'FITASWI002_JK9'])
+                         ['NLUTSWI001_RA8', 'NLUTSWI002_RA9'])
 
     def test_rule_form_shows_the_fields_of_its_number_source(self):
         url = reverse(URL + 'namingrule_add')
@@ -133,28 +155,28 @@ class ViewTests(NetBoxData, TestCase):
 
     def test_changing_what_a_rule_names_drops_conditions_it_has_no_use_for(self):
         response = self.client.post(reverse(URL + 'namingrule_edit', args=[self.switches.pk]), {
-            'name': 'Tampere racks', 'template': 'R{n}', 'priority': 100, 'enabled': 'on',
-            'object_type': 'rack', 'sites': [self.tampere.pk], 'number_source': 'sequence', 'number_digits': 2,
+            'name': 'Utrecht racks', 'template': 'R{n}', 'priority': 100, 'enabled': 'on',
+            'object_type': 'rack', 'sites': [self.utrecht.pk], 'number_source': 'sequence', 'number_digits': 2,
             'number_first': 1, 'number_scope': 'shared', 'enforcement': 'warn', 'tag_match': 'all',
             'required_values': ['site'],
         })
         self.assertEqual(response.status_code, 302, response.content[:3000])
         self.assertFalse(self.switches.roles.exists())  # racks have no device roles
-        self.assertEqual(list(self.switches.sites.all()), [self.tampere])
+        self.assertEqual(list(self.switches.sites.all()), [self.utrecht])
 
     def test_reserve_names_from_the_rule_page(self):
         url = reverse(URL + 'namingrule_reserve', args=[self.switches.pk])
         page = self.client.get(url)
         self.assertContains(page, 'id="id_rack"')
-        response = self.client.post(url, {'count': 2, 'site': self.tampere.pk, 'role': self.access.pk,
-                                          'rack': self.jk8.pk})
+        response = self.client.post(url, {'count': 2, 'site': self.utrecht.pk, 'role': self.access.pk,
+                                          'rack': self.ra8.pk})
         self.assertEqual(response.status_code, 302, response.content[:3000])
         page = self.client.get(self.switches.get_absolute_url())
-        self.assertContains(page, 'FITASWI001_JK8')
-        self.assertContains(page, 'FITASWI002_JK8')
+        self.assertContains(page, 'NLUTSWI001_RA8')
+        self.assertContains(page, 'NLUTSWI002_RA8')
         first = self.switches.reserved_names.first()
         self.client.post(reverse(URL + 'namingrule_unreserve', args=[self.switches.pk]), {'pk': [first.pk]})
-        self.assertEqual(list(self.switches.reserved_names.values_list('name', flat=True)), ['FITASWI002_JK8'])
+        self.assertEqual(list(self.switches.reserved_names.values_list('name', flat=True)), ['NLUTSWI002_RA8'])
 
     def test_ip_rule_form_saves_without_the_sequence_fields(self):
         response = self.client.post(reverse(URL + 'namingrule_add'), {
@@ -183,10 +205,10 @@ class ViewTests(NetBoxData, TestCase):
     def test_device_form_helper_locks_names_that_follow_the_rule(self):
         page = self.client.get(reverse('dcim:device_add'))
         self.assertContains(page, "var LOCKED = 'yes'")
-        named = self.device(rack=self.jk8)
+        named = self.device(rack=self.ra8)
         page = self.client.get(reverse('dcim:device_edit', args=[named.pk]))
         self.assertContains(page, "var LOCKED = 'yes'")
-        typed = self.device(name='my-switch', rack=self.jk8)
+        typed = self.device(name='my-switch', rack=self.ra8)
         page = self.client.get(reverse('dcim:device_edit', args=[typed.pk]))
         self.assertContains(page, "var LOCKED = ''")
 
@@ -196,51 +218,51 @@ class ViewTests(NetBoxData, TestCase):
 
     def test_name_from_the_rule_is_recorded(self):
         response = self.client.post(reverse('dcim:device_add'), {
-            'site': self.tampere.pk, 'role': self.access.pk, 'device_type': self.c9300.pk, 'rack': self.jk8.pk,
+            'site': self.utrecht.pk, 'role': self.access.pk, 'device_type': self.c9300.pk, 'rack': self.ra8.pk,
             'status': DeviceStatusChoices.STATUS_ACTIVE, 'changelog_message': 'New switch',
         })
         self.assertEqual(response.status_code, 302, response.content[:3000])
         device = Device.objects.get()
         change = ObjectChange.objects.get(changed_object_id=device.pk, action='create')
-        self.assertEqual(change.message, 'New switch | Name from naming rule "Tampere switches"')
+        self.assertEqual(change.message, 'New switch | Name from naming rule "Utrecht switches"')
         assigned = AssignedName.of(device).get()
-        self.assertEqual((assigned.name, assigned.how, assigned.rule), ('FITASWI001_JK8', 'auto', self.switches))
+        self.assertEqual((assigned.name, assigned.how, assigned.rule), ('NLUTSWI001_RA8', 'auto', self.switches))
         self.assertContains(self.client.get(device.get_absolute_url()), 'Filled in by the rule')
 
     def test_typed_name_is_not_recorded(self):
         self.client.post(reverse('dcim:device_add'), {
-            'name': 'my-switch', 'site': self.tampere.pk, 'role': self.access.pk, 'device_type': self.c9300.pk,
-            'rack': self.jk8.pk, 'status': DeviceStatusChoices.STATUS_ACTIVE,
+            'name': 'my-switch', 'site': self.utrecht.pk, 'role': self.access.pk, 'device_type': self.c9300.pk,
+            'rack': self.ra8.pk, 'status': DeviceStatusChoices.STATUS_ACTIVE,
         })
         device = Device.objects.get()
         self.assertFalse(AssignedName.objects.exists())
         self.assertEqual(ObjectChange.objects.get(changed_object_id=device.pk, action='create').message, '')
 
     def test_suggest_again_is_recorded(self):
-        device = self.device(rack=self.jk8)
-        form = {'site': self.tampere.pk, 'role': self.access.pk, 'device_type': self.c9300.pk, 'rack': self.jk9.pk,
+        device = self.device(rack=self.ra8)
+        form = {'site': self.utrecht.pk, 'role': self.access.pk, 'device_type': self.c9300.pk, 'rack': self.ra9.pk,
                 'status': DeviceStatusChoices.STATUS_ACTIVE}
         # A name typed by hand that happens to differ from the suggestion: not recorded.
         self.client.post(reverse('dcim:device_edit', args=[device.pk]), {
-            **form, 'name': 'FITASWI005_JK9', '_naming_suggested': 'FITASWI001_JK9',
+            **form, 'name': 'NLUTSWI005_RA9', '_naming_suggested': 'NLUTSWI001_RA9',
         })
-        self.assertFalse(AssignedName.objects.filter(name='FITASWI005_JK9').exists())
-        device.rack = self.jk8
-        device.name = 'FITASWI001_JK8'
+        self.assertFalse(AssignedName.objects.filter(name='NLUTSWI005_RA9').exists())
+        device.rack = self.ra8
+        device.name = 'NLUTSWI001_RA8'
         device.save()
         response = self.client.post(reverse('dcim:device_edit', args=[device.pk]), {
-            **form, 'name': 'FITASWI001_JK9', '_naming_suggested': 'FITASWI001_JK9',
+            **form, 'name': 'NLUTSWI001_RA9', '_naming_suggested': 'NLUTSWI001_RA9',
         })
         self.assertEqual(response.status_code, 302, response.content[:3000])
         device.refresh_from_db()
-        self.assertEqual(device.name, 'FITASWI001_JK9')
-        self.assertEqual(AssignedName.of(device).get(name='FITASWI001_JK9').how, 'suggested')
+        self.assertEqual(device.name, 'NLUTSWI001_RA9')
+        self.assertEqual(AssignedName.of(device).get(name='NLUTSWI001_RA9').how, 'suggested')
         change = ObjectChange.objects.filter(changed_object_id=device.pk, action='update').latest('time')
-        self.assertEqual(change.message, 'Name suggested by naming rule "Tampere switches"')
+        self.assertEqual(change.message, 'Name suggested by naming rule "Utrecht switches"')
 
     def test_rename_devices_to_the_rule(self):
-        one = self.device(name='old-1', rack=self.jk8)
-        two = self.device(name='old-2', rack=self.jk9)
+        one = self.device(name='old-1', rack=self.ra8)
+        two = self.device(name='old-2', rack=self.ra9)
         page = self.client.get(self.switches.get_absolute_url())
         self.assertContains(page, reverse(URL + 'namingrule_rename', args=[self.switches.pk]))
         self.assertContains(page, f'name="pk" value="{one.pk}"')  # the objects can be ticked
@@ -248,7 +270,7 @@ class ViewTests(NetBoxData, TestCase):
                                 {'pk': [one.pk, two.pk]})
         self.assertEqual(page.status_code, 200)
         data = page.context['data']
-        self.assertEqual(data, f'id,name\n{one.pk},FITASWI001_JK8\n{two.pk},FITASWI002_JK9\n')
+        self.assertEqual(data, f'id,name\n{one.pk},NLUTSWI001_RA8\n{two.pk},NLUTSWI002_RA9\n')
         # The confirm button sends it to NetBox's device import.
         response = self.client.post(reverse('dcim:device_bulk_import'), {
             'data': data, 'format': 'csv', 'csv_delimiter': ',', 'import_method': 'direct', '_naming_rename': '1',
@@ -256,14 +278,14 @@ class ViewTests(NetBoxData, TestCase):
         self.assertEqual(response.status_code, 302, response.content[:3000])
         one.refresh_from_db()
         two.refresh_from_db()
-        self.assertEqual((one.name, two.name), ('FITASWI001_JK8', 'FITASWI002_JK9'))
+        self.assertEqual((one.name, two.name), ('NLUTSWI001_RA8', 'NLUTSWI002_RA9'))
         self.assertEqual(AssignedName.of(one).get().how, 'suggested')
 
     def test_naming_report(self):
-        follows = self.device(rack=self.jk8)
-        drifted = self.device(name='old-1', rack=self.jk9)
+        follows = self.device(rack=self.ra8)
+        drifted = self.device(name='old-1', rack=self.ra9)
         # Made before the rule (bulk_create skips the plugin's save hooks).
-        unnamed, = Device.objects.bulk_create([self.device(rack=self.jk8, save=False)])
+        unnamed, = Device.objects.bulk_create([self.device(rack=self.ra8, save=False)])
         router = self.device(name='r1', role=self.router)
         url = reverse(URL + 'report')
         page = self.client.get(url)
@@ -272,7 +294,7 @@ class ViewTests(NetBoxData, TestCase):
         self.assertEqual([(entry.rule, entry.count, entry.drifted) for entry in report.rules],
                          [(self.switches, 3, 2)])
         self.assertEqual([obj.pk for obj in report.shown], [drifted.pk])
-        self.assertContains(page, 'FITASWI002_JK9')
+        self.assertContains(page, 'NLUTSWI002_RA9')
         self.assertContains(page, f'name="pk" value="{drifted.pk}"')
         page = self.client.get(url, {'show': 'no_rule'})
         self.assertEqual([obj.pk for obj in page.context['report'].shown], [router.pk])
@@ -280,26 +302,26 @@ class ViewTests(NetBoxData, TestCase):
         # Ticked objects are renamed by their own rules; one without a rule is left alone.
         page = self.client.post(reverse(URL + 'report_rename') + '?object_type=device',
                                 {'pk': [drifted.pk, unnamed.pk, router.pk, follows.pk]})
-        self.assertEqual(page.context['data'], f'id,name\n{drifted.pk},FITASWI002_JK9\n{unnamed.pk},FITASWI003_JK8\n')
+        self.assertEqual(page.context['data'], f'id,name\n{drifted.pk},NLUTSWI002_RA9\n{unnamed.pk},NLUTSWI003_RA8\n')
         self.assertEqual([obj for obj, _reason in page.context['skipped']], [router])
         # Racks have their own tab.
         page = self.client.get(url, {'object_type': 'rack'})
         self.assertEqual(page.context['report'].counts['no_rule'], 2)
 
     def test_rule_preview(self):
-        named = self.device(rack=self.jk8)
-        Device.objects.create(name='old-switch', site=self.tampere, role=self.access, device_type=self.c9300,
-                              rack=self.jk9)
+        named = self.device(rack=self.ra8)
+        Device.objects.create(name='old-switch', site=self.utrecht, role=self.access, device_type=self.c9300,
+                              rack=self.ra9)
         self.assertContains(self.client.get(reverse(URL + 'namingrule_add')), 'id="naming-preview"')
         url = reverse(URL + 'namingrule_preview')
         form = {
-            'name': 'Tampere switches', 'priority': 100, 'roles': [self.switch.pk], 'sites': [self.tampere.pk],
+            'name': 'Utrecht switches', 'priority': 100, 'roles': [self.switch.pk], 'sites': [self.utrecht.pk],
             'number_source': 'sequence', 'number_digits': 3, 'number_first': 1, 'number_scope': 'shared',
             'enforcement': 'warn', 'tag_match': 'all', 'required_values': ['site', 'role', 'device_type'],
         }
         # Editing a rule: its devices with the names the new template gives them.
         page = self.client.post(f'{url}?rule={self.switches.pk}', {**form, 'template': 'SW-{rack.name}-{n}'})
-        self.assertEqual([row['name'] for row in page.context['rows']], ['SW-JK8-001', 'SW-JK9-001'])
+        self.assertEqual([row['name'] for row in page.context['rows']], ['SW-RA8-001', 'SW-RA9-001'])
         self.assertEqual(page.context['rows'][0]['object'], named)
         self.assertEqual(self.switches.template, NamingRule.objects.get(pk=self.switches.pk).template)
         # A new rule, tried on a device of another rule.

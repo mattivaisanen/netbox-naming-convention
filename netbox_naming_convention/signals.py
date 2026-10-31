@@ -16,6 +16,10 @@ see kinds.py). "Device" below stands for any of them.
 - post_save: remembers which names a rule gave (AssignedName), for the
   device page and change requests, and uses up a reservation of the name
   (ReservedName). post_delete forgets the names a rule gave.
+- pre_delete: a device deleted while its create request in
+  netbox-change-approval is still open (rejected, withdrawn, sent back,
+  expired) was never approved, so its number is given back to the series.
+  Without that plugin nothing happens here.
 
 A device that has a name is never renamed here: renaming is always a person's
 edit (the device form's "Suggest again" button).
@@ -23,13 +27,14 @@ edit (the device form's "Suggest again" button).
 import logging
 
 from django.core.exceptions import ValidationError
-from django.db.models.signals import post_delete, post_save, pre_save
+from django.db import transaction
+from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 
 from netbox.context import current_request
 from netbox.signals import post_clean
 from utilities.exceptions import AbortRequest
 
-from . import naming
+from . import integrations, naming
 from .kinds import KINDS, kind_of
 from .matching import find_rule
 from .models import AssignedHowChoices, AssignedName, EnforcementChoices, ReservedName
@@ -175,6 +180,17 @@ def record_on_save(sender, instance, raw=False, **kwargs):
     AssignedName.record(instance, instance.name, rule, AssignedHowChoices.AUTO)
 
 
+def release_on_delete(sender, instance, **kwargs):
+    if not integrations.awaiting_approval(instance):
+        return
+    try:
+        # A savepoint, so a failure here never breaks the delete itself.
+        with transaction.atomic():
+            naming.release(instance)
+    except Exception:
+        logger.exception('Could not give back the number of %s', instance)
+
+
 def forget_on_delete(sender, instance, **kwargs):
     AssignedName.of(instance).delete()
 
@@ -187,6 +203,7 @@ def connect():
         post_clean.connect(name_on_clean, sender=model, dispatch_uid=f'{uid}.clean')
         pre_save.connect(name_on_save, sender=model, dispatch_uid=f'{uid}.pre_save')
         post_save.connect(record_on_save, sender=model, dispatch_uid=f'{uid}.post_save')
+        pre_delete.connect(release_on_delete, sender=model, dispatch_uid=f'{uid}.pre_delete')
         post_delete.connect(forget_on_delete, sender=model, dispatch_uid=f'{uid}.post_delete')
 
 

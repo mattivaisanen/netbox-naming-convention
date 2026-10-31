@@ -38,7 +38,8 @@ Everything below works the same for devices, virtual machines and racks;
 - **Running numbers per series.** Each rule sets the digits (001 or 0001),
   the first and last number, numbers that are never handed out, and whether
   numbers of deleted devices are reused (gap filling). Without gap filling a
-  deleted device's number never comes back.
+  deleted device's number never comes back (numbers of devices that were
+  never approved in netbox-change-approval do).
 - **Numbers from the IP**, instead of running numbers: a mask such as
   `*.*.*.N` takes the last octet of the device's primary IP, so with the
   template `sw{n}` the device with 10.0.0.6 is `sw006`. The plugin never
@@ -58,7 +59,7 @@ Everything below works the same for devices, virtual machines and racks;
   Tick some of them and *Rename selected to the suggested names* shows old
   and new names; confirming sends them through NetBox's own device import,
   so permissions, the change log and approvals work as for any bulk edit.
-- **Naming report** (*Naming → Naming report*): for devices, virtual
+- **Naming report** (*Naming → Naming Report*): for devices, virtual
   machines and racks, how many have a name that doesn't follow their rule,
   have no name yet, aren't named by any rule, or follow their rule, with a
   count per rule. Each group lists its objects (the first 100) with the
@@ -68,11 +69,11 @@ Everything below works the same for devices, virtual machines and racks;
 
 ## Requirements
 
-- NetBox **4.7** (tested with 4.7.0 and 4.7.3). NetBox refuses to load the
-  plugin on older versions.
+- NetBox **4.7 or later** (tested with 4.7.0 and 4.7.3). NetBox refuses to
+  load the plugin on older versions.
 - No other plugins. Works with
   [netbox-change-approval](https://github.com/mattivaisanen/netbox-change-approval)
-  when it is installed (tested with 0.3.3).
+  when it is installed (tested with 0.4.0).
 
 ## Installation
 
@@ -81,8 +82,12 @@ environment (on a standard install, `source /opt/netbox/venv/bin/activate`
 first):
 
 ```bash
-pip install git+https://github.com/mattivaisanen/netbox-naming-convention.git
+pip install git+https://github.com/mattivaisanen/netbox-naming-convention.git@v0.2.0
 ```
+
+Releases are listed under
+[Releases](https://github.com/mattivaisanen/netbox-naming-convention/releases);
+leave out `@v0.2.0` to install the latest code from `main`.
 
 Add it to `configuration.py`:
 
@@ -115,7 +120,7 @@ and restart NetBox.
 
 ## Rules
 
-Under **Naming → Naming rules**. Rules are checked by priority (lowest
+Under **Naming → Naming Rules**. Rules are checked by priority (lowest
 first); the first enabled rule that matches a device names it. On the same
 priority, the rule with more kinds of conditions is checked first, so a rule
 for switches tagged `lab` wins over one for all switches; after that, by
@@ -129,18 +134,18 @@ name. Set different priorities when you want a fixed order.
 | Rack roles, rack types | Racks, optional. A rule without conditions names every rack. |
 | Regions, site groups, sites, locations, tenants, platforms, statuses | Optional. Within one field any listed value matches; all fields that have values must match. Child regions and locations match too. |
 | Device tags, tag match | Optional. The device needs all (or any) of the tags, for categories of devices that roles don't tell apart. |
-| Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. Users, their API tokens and preferences can't be used. |
+| Advanced condition | Optional. A filter in NetBox's permission-constraint format, such as `{"serial__startswith": "FOC"}`, or a list of filters of which any may match. Users, tokens and permissions, data sources, the change log, content types, webhooks and event rules can't be used. |
 | Template | How the name is built, see below. |
 | Wait for | The fields that must be set before the name is filled in, besides the values the template uses, such as site, location, rack, role, device type, cluster, tenant, platform, serial number or asset tag (the form lists those of the rule's kind). New device rules wait for site, role and device type (what the device form requires), rack rules for the site, virtual machine rules for nothing. |
 | Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |
 | Number source | *Running number* or *From primary IP*. |
-| Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. |
-| First number, last number | Running numbers only. The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3). |
-| Numbers never handed out | Running numbers only. For example `0, 100-199`. |
+| Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. Not used by a letter counter. |
+| First number, last number | Running numbers only. The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3), or 26 (`z`) for a letter counter, where `a` is 1. |
+| Numbers never handed out | Running numbers only. For example `0, 100-199`, or letters for a letter counter: `i, o, x-z`. |
 | Fill gaps | Running numbers only. On: the lowest number no device has now, including those of deleted devices. Off: one more than the highest number ever handed out, so gaps are never refilled (a name with a free number can still be typed by hand). The plugin can't tell a gap left on purpose from one left by accident: retire numbers on purpose with *Numbers never handed out*, or keep the retired device in NetBox (its number counts as used while it exists). |
 | Number scope | *Shared*: the number counts per text before it, so racks share one run (`AMS1-SW014-R01`, `AMS1-SW015-R02`). *Whole name*: each full name counts on its own (`AMS1-SW001-R01`, `AMS1-SW001-R02`). |
+| Member suffix | Optional. An ending a name may have after the number, for members of a stack or cluster. `#` is one or more digits: with `-#`, `SW005-1` and `SW005-2` follow the rule `SW{n}`, both count as number 5 and keep their ending when suggested again. New names are suggested without the ending. |
 | IP pattern | *From primary IP* only: a mask such as `*.*.*.N` (the octet marked N is the number) or a regular expression with one group, such as `\.([0-9]+)$`. |
-
 | Enforcement | *Off*, *Warn* (default) or *Refuse*, see above. |
 
 The rule form shows only the number fields that apply to the number source
@@ -181,7 +186,8 @@ same lists as below.
 | Part | Gives |
 | --- | --- |
 | `SW-` | the text as written |
-| `{n}` | the number, padded to the rule's digits (at most one per template) |
+| `{n}` | the number, padded to the rule's digits |
+| `{a-z}`, `{A-Z}` | the number as one letter instead, `a` (1) to `z` (26), in lower or upper case. A template has one counter at most: `{n}`, `{a-z}` or `{A-Z}` |
 | `{site.name}`, `{site.slug}`, `{site.facility}` | values of the device's site |
 | `{location.name}`, `{rack.name}`, `{tenant.slug}`, `{platform.name}` | values of other objects the device is in or has |
 | `{role.name}`, `{role.parent.name}` | the role, or its parent (Switch for Switch / Access) |
@@ -235,6 +241,7 @@ for them the missing value is an error until it is set (or a name is typed).
 | Numbered by IP | `{site.slug}-sw{n}`, mask `*.*.*.N` | `ams1-sw006` for 10.0.0.6 |
 | Virtual machines per cluster | `{cluster.name\|upper}-VM{n}` | `PROD-VM001` |
 | Racks per site, 2 digits | `{site.slug\|upper}-R{n}` | `AMS1-R01` |
+| Devices per rack, by letter | `{rack.name}{a-z}` | `R07a`, `R07b`, `R12a` |
 
 Devices, virtual machines and racks count separately: a rack named
 `AMS1-R01` doesn't take number 1 from devices named `AMS1-R…`. Racks can't
@@ -268,11 +275,15 @@ take their number from an IP (they have none).
 Naming rules are ordinary NetBox objects, so changes to them need approval
 like changes to any other object. A new device is written at once by
 change-approval (marked pending), so it gets its name and number right
-away; a rename waits for approval. Above the changes, the change request
+away; a rename waits for approval. While the request is open the number
+counts as used. If the request is rejected, withdrawn, sent back or expires,
+the device is removed and its number goes back to the series: the next
+device gets it, even with gap filling off and even when later numbers were
+handed out meanwhile. Above the changes, the change request
 page says whether the name was filled in by the rule, follows it, or
 doesn't (and what the rule suggests). The plugin's own records (numbers handed out, names
 given) are never gated.
 
 ## License
 
-Apache 2.0, see [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).

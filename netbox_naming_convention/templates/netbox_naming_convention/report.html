@@ -2,7 +2,7 @@
 {% load render_table from django_tables2 %}
 {% load i18n %}
 
-{% block title %}{% trans "Naming report" %}{% endblock %}
+{% block title %}{% trans "Naming Report" %}{% endblock %}
 
 {% block tabs %}
 <ul class="nav nav-tabs">
@@ -33,7 +33,7 @@
           {% trans "Follows its rule" %}<span class="ms-auto">{{ report.counts.follows }}</span>
         </a>
       </div>
-      {% if report.truncated %}<div class="card-footer text-muted">{% blocktrans with kinds=kind.label_plural %}Only the first {{ limit }} {{ kinds }} are counted.{% endblocktrans %}</div>{% endif %}
+      {% if report.truncated %}<div class="card-footer text-secondary">{% blocktrans with kinds=kind.label_plural %}Only the first {{ limit }} {{ kinds }} are counted.{% endblocktrans %}</div>{% endif %}
     </div>
     <div class="card">
       <h2 class="card-header">{% trans "Rules" %}</h2>
@@ -45,7 +45,7 @@
         {% endfor %}
       </table>
       {% else %}
-      <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}No rule names any {{ kinds }} yet.{% endblocktrans %}</div>
+      <div class="card-body text-secondary">{% blocktrans with kinds=kind.label_plural %}No rule names any {{ kinds }} yet.{% endblocktrans %}</div>
       {% endif %}
     </div>
   </div>
@@ -55,7 +55,7 @@
         <form action="{% url 'plugins:netbox_naming_convention:report_rename' %}?object_type={{ kind.key }}" method="post">
           {% csrf_token %}
           {% render_table table 'inc/table.html' %}
-          {% if report.shown|length >= shown_limit %}<div class="card-footer text-muted">{% blocktrans with kinds=kind.label_plural %}The first {{ shown_limit }} {{ kinds }} are listed.{% endblocktrans %}</div>{% endif %}
+          {% if report.shown|length >= shown_limit %}<div class="card-footer text-secondary">{% blocktrans with kinds=kind.label_plural %}The first {{ shown_limit }} {{ kinds }} are listed.{% endblocktrans %}</div>{% endif %}
           {% if can_rename %}
           <div class="card-footer text-end">
             <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-rename-outline"></i> {% trans "Rename selected to the suggested names" %}</button>
@@ -63,7 +63,7 @@
           {% endif %}
         </form>
       {% else %}
-        <div class="card-body text-muted">{% trans "Nothing here." %}</div>
+        <div class="card-body text-secondary">{% trans "Nothing here." %}</div>
       {% endif %}
     </div>
   </div>

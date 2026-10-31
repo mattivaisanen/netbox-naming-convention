@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("netbox_naming_convention", "0005_object_types"),
+        ("netbox_naming_convention", "0007_namingseries_released"),
     ]
 
     operations = [

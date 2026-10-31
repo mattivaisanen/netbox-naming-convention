@@ -21,7 +21,7 @@ class APITests(NetBoxData, TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.make_netbox()
-        cls.switches = cls.rule(roles=[cls.switch], sites=[cls.tampere])
+        cls.switches = cls.rule(roles=[cls.switch], sites=[cls.utrecht])
         cls.user = get_user_model().objects.create(username='admin', is_superuser=True)
 
     def setUp(self):
@@ -31,33 +31,33 @@ class APITests(NetBoxData, TestCase):
         return self.client.post(url, data, content_type='application/json')
 
     def device_data(self, **extra):
-        return {'site': self.tampere.pk, 'role': self.access.pk, 'device_type': self.c9300.pk,
-                'rack': self.jk8.pk, **extra}
+        return {'site': self.utrecht.pk, 'role': self.access.pk, 'device_type': self.c9300.pk,
+                'rack': self.ra8.pk, **extra}
 
     def test_create_without_name(self):
         response = self.post(reverse('dcim-api:device-list'), self.device_data())
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(response.json()['name'], 'FITASWI001_JK8')
+        self.assertEqual(response.json()['name'], 'NLUTSWI001_RA8')
 
     def test_bulk_create_without_names(self):
-        response = self.post(reverse('dcim-api:device-list'), [self.device_data(), self.device_data(rack=self.jk9.pk)])
+        response = self.post(reverse('dcim-api:device-list'), [self.device_data(), self.device_data(rack=self.ra9.pk)])
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual([d['name'] for d in response.json()], ['FITASWI001_JK8', 'FITASWI002_JK9'])
+        self.assertEqual([d['name'] for d in response.json()], ['NLUTSWI001_RA8', 'NLUTSWI002_RA9'])
 
     def test_reserved_names_are_skipped_and_used_up(self):
         response = self.post(reverse(RESERVE), self.device_data(count=2, description='order 42'))
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual([r['name'] for r in response.json()], ['FITASWI001_JK8', 'FITASWI002_JK8'])
+        self.assertEqual([r['name'] for r in response.json()], ['NLUTSWI001_RA8', 'NLUTSWI002_RA8'])
         # Nobody else gets the reserved numbers.
         response = self.post(reverse('dcim-api:device-list'), self.device_data())
-        self.assertEqual(response.json()['name'], 'FITASWI003_JK8')
+        self.assertEqual(response.json()['name'], 'NLUTSWI003_RA8')
         # A rule that refuses other names accepts the reserved one, and saving it uses the reservation up.
         self.switches.enforcement = EnforcementChoices.REFUSE
         self.switches.save()
-        response = self.post(reverse('dcim-api:device-list'), self.device_data(name='FITASWI002_JK8'))
+        response = self.post(reverse('dcim-api:device-list'), self.device_data(name='NLUTSWI002_RA8'))
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(list(ReservedName.objects.values_list('name', flat=True)), ['FITASWI001_JK8'])
-        response = self.post(reverse('dcim-api:device-list'), self.device_data(name='FITASWI001_JK9'))
+        self.assertEqual(list(ReservedName.objects.values_list('name', flat=True)), ['NLUTSWI001_RA8'])
+        response = self.post(reverse('dcim-api:device-list'), self.device_data(name='NLUTSWI001_RA9'))
         self.assertEqual(response.status_code, 400)  # number 1 is reserved
         self.assertEqual(self.client.get(reverse(RESERVATIONS)).json()['count'], 1)
 
@@ -66,18 +66,18 @@ class APITests(NetBoxData, TestCase):
         self.switches.save()
         yesterday = datetime.date.today() - datetime.timedelta(days=1)
         response = self.post(reverse(RESERVE), self.device_data(expires=yesterday.isoformat()))
-        self.assertEqual(response.json()[0]['name'], 'FITASWI001_JK8')
+        self.assertEqual(response.json()[0]['name'], 'NLUTSWI001_RA8')
         response = self.post(reverse('dcim-api:device-list'), self.device_data())
-        self.assertEqual(response.json()['name'], 'FITASWI001_JK8')
+        self.assertEqual(response.json()['name'], 'NLUTSWI001_RA8')
         self.assertFalse(ReservedName.objects.exists())
 
     def test_create_with_tags_rule(self):
-        self.rule(roles=[self.router], match_tags=[self.ot], template='FITAROT{n}', priority=1)
+        self.rule(roles=[self.router], match_tags=[self.lab], template='NLUTROT{n}', priority=1)
         response = self.post(reverse('dcim-api:device-list'), self.device_data(
-            role=self.router.pk, tags=[{'name': 'ot'}],
+            role=self.router.pk, tags=[{'name': 'lab'}],
         ))
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(response.json()['name'], 'FITAROT001')
+        self.assertEqual(response.json()['name'], 'NLUTROT001')
 
     def test_create_with_name_keeps_it(self):
         response = self.post(reverse('dcim-api:device-list'), self.device_data(name='mine'))
@@ -93,7 +93,7 @@ class APITests(NetBoxData, TestCase):
 
     def test_suggest(self):
         data = self.post(reverse(SUGGEST), self.device_data()).json()
-        self.assertEqual(data['name'], 'FITASWI001_JK8')
+        self.assertEqual(data['name'], 'NLUTSWI001_RA8')
         self.assertTrue(data['ready'])
         self.assertEqual(data['rule']['id'], self.switches.pk)
         self.assertFalse(Device.objects.exists(), 'suggesting saves nothing')
@@ -103,19 +103,19 @@ class APITests(NetBoxData, TestCase):
         self.assertEqual((data['ready'], data['missing']), (False, ['rack']))
 
     def test_suggest_no_rule(self):
-        data = self.post(reverse(SUGGEST), self.device_data(site=self.helsinki.pk)).json()
+        data = self.post(reverse(SUGGEST), self.device_data(site=self.nijmegen.pk)).json()
         self.assertIsNone(data['rule'])
 
     def test_suggest_for_existing_device_keeps_its_number(self):
-        device = self.device(rack=self.jk8)
-        self.device(rack=self.jk8)
-        data = self.post(reverse(SUGGEST), {'device': device.pk, 'rack': self.jk9.pk}).json()
-        self.assertEqual(data['name'], 'FITASWI001_JK9')
-        self.assertEqual(data['current'], 'FITASWI001_JK8')
+        device = self.device(rack=self.ra8)
+        self.device(rack=self.ra8)
+        data = self.post(reverse(SUGGEST), {'device': device.pk, 'rack': self.ra9.pk}).json()
+        self.assertEqual(data['name'], 'NLUTSWI001_RA9')
+        self.assertEqual(data['current'], 'NLUTSWI001_RA8')
 
     def test_suggest_for_existing_device_waits_for_a_cleared_field(self):
         # The device form sends a cleared field as null; the saved rack must not be used.
-        device = self.device(rack=self.jk8)
+        device = self.device(rack=self.ra8)
         data = self.post(reverse(SUGGEST), {'device': device.pk, 'rack': None}).json()
         self.assertEqual((data['ready'], data['missing']), (False, ['rack']))
 

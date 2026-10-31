@@ -87,6 +87,11 @@ class Kind:
     def model(self):
         return apps.get_model(self.model_label)
 
+    def permission(self, action):
+        """The NetBox permission to `action` (add, change...) objects of this kind, such as dcim.change_device."""
+        app_label, model_name = self.model_label.split('.')
+        return f'{app_label}.{action}_{model_name}'
+
     @property
     def condition_fields(self):
         return tuple(c.field for c in self.conditions) + ('match_tags',)

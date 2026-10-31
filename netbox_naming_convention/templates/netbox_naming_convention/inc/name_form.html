@@ -93,24 +93,28 @@ document.addEventListener('DOMContentLoaded', function () {
   var cookie = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
   var token = cookie ? decodeURIComponent(cookie[1]) : '{{ csrf_token|escapejs }}';
 
-  var group = document.createElement('div');
-  group.className = 'input-group';
-  input.parentNode.insertBefore(group, input);
-  group.appendChild(input);
-  var again = document.createElement('button');
-  again.type = 'button';
-  again.className = 'btn btn-outline-primary';
-  again.textContent = TEXT.again;
-  again.hidden = true;
-  group.appendChild(again);
-  var button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn-outline-secondary';
-  button.hidden = true;
-  group.appendChild(button);
-  var note = document.createElement('div');
-  note.className = 'form-text';
-  group.parentNode.insertBefore(note, group.nextSibling);
+  // The name field with its buttons and note. attach() builds them, and
+  // builds them again when NetBox redraws the form's fields (choosing a
+  // virtual machine type reloads them through HTMX).
+  var group, again, button, note;
+  function attach() {
+    group = el('div', 'input-group');
+    input.parentNode.insertBefore(group, input);
+    group.appendChild(input);
+    again = el('button', 'btn btn-outline-primary', TEXT.again);
+    again.type = 'button';
+    again.hidden = true;
+    group.appendChild(again);
+    button = el('button', 'btn btn-outline-secondary');
+    button.type = 'button';
+    button.hidden = true;
+    group.appendChild(button);
+    note = el('div', 'form-text');
+    group.parentNode.insertBefore(note, group.nextSibling);
+    button.addEventListener('click', toggle);
+    again.addEventListener('click', suggestAgain);
+    input.addEventListener('input', typed);
+  }
 
   // Add: the name starts locked (grayed, filled in by the rule) unless the
   // form came back with a name typed in. Edit: locked when the name follows
@@ -173,8 +177,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function lock(on) {
     input.readOnly = on;
-    input.style.backgroundColor = on ? 'var(--tblr-secondary-bg, #e5e7eb)' : '';
-    input.style.color = on ? 'var(--tblr-secondary, #6b7280)' : '';
+    input.style.backgroundColor = on ? 'var(--tblr-secondary-bg)' : '';
+    input.style.color = on ? 'var(--tblr-secondary)' : '';
     if (MODE === 'add') {
       if (on && !marker.parentNode) { form.appendChild(marker); }
       if (!on && marker.parentNode) { marker.parentNode.removeChild(marker); }
@@ -296,7 +300,7 @@ document.addEventListener('DOMContentLoaded', function () {
     timer = setTimeout(ask, 250);
   }
 
-  button.addEventListener('click', function () {
+  function toggle() {
     if (MODE === 'edit' && !locked) {
       // Back to the name the field had when it was locked.
       input.value = keep;
@@ -304,8 +308,8 @@ document.addEventListener('DOMContentLoaded', function () {
     locked = !locked;
     show();
     if (!locked) { input.focus(); input.select(); }
-  });
-  again.addEventListener('click', function () {
+  }
+  function suggestAgain() {
     if (!last || !last.ready) { return; }
     input.value = last.name;
     keep = last.name;
@@ -313,23 +317,35 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!accepted.parentNode) { form.appendChild(accepted); }
     locked = true;
     show();
-  });
+  }
   form.addEventListener('change', function (event) {
     if (event.target !== input) { soon(); }
   });
-  input.addEventListener('input', function () {
+  function typed() {
     if (!input.readOnly && MODE === 'add') { locked = false; }
     if (MODE === 'edit') { show(); }
+  }
+  // The form's fields were redrawn: the name field is a new one.
+  document.body.addEventListener('htmx:afterSettle', function () {
+    var current = document.getElementById('id_name');
+    if (!current || current === input || current.form !== form) { return; }
+    input = current;
+    attach();
+    if (last) { show(); } else { start(); }
   });
   // Selects driven by TomSelect don't always send a change event the form
   // sees; look for changed values now and then too.
   setInterval(ask, 1500);
-  if (locked) { lock(true); }
-  if (MODE === 'add' && locked) {
-    var waiting = missingNote();
-    setNote(waiting ? [waiting] : []);
-    setIcon('mdi-pencil', TEXT.edit);
+  function start() {
+    if (locked) { lock(true); }
+    if (MODE === 'add' && locked) {
+      var waiting = missingNote();
+      setNote(waiting ? [waiting] : []);
+      setIcon('mdi-pencil', TEXT.edit);
+    }
   }
+  attach();
+  start();
   ask();
 });
 </script>

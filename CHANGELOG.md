@@ -4,13 +4,34 @@
 
 New:
 
+- *Member suffix* per rule, for stack or cluster members: with `-#`, names
+  such as `SW005-1` and `SW005-2` follow the rule `SW{n}`, share number 5
+  (which then is not a gap) and keep their ending when suggested again.
+- Letter counter: `{a-z}` or `{A-Z}` in a template counts a to z instead
+  of digits, such as `{rack.name}{a-z}` for `R07a`, `R07b`.
 - Reserve names ahead of time: *Reserve names* on a rule page (or
   `POST /api/plugins/naming-convention/reserve/`) takes the next names of
   the rule for devices, virtual machines or racks that aren't in NetBox
   yet, for labels or an order. Nobody else gets those numbers; saving an
   object with the reserved name uses it up. Reservations can expire, and
   the rule page frees them.
-- Naming report (*Naming → Naming report*): every device, virtual machine
+
+Fixed:
+
+- With netbox-change-approval: a device whose create request is rejected,
+  withdrawn, sent back or expires gives its number back to the series. The
+  next device gets it, even with gap filling off and even when later
+  numbers were handed out meanwhile. A device deleted after approval still
+  keeps its number, as before. Nothing changes without change-approval.
+- Changing what a rule names (say from devices to racks) on the rule form
+  kept the old kind's conditions, such as device roles, out of sight. The
+  API then refused every edit of the rule. They are now cleared.
+
+## 0.2.0 (2026-10-26)
+
+New:
+
+- Naming report (*Naming → Naming Report*): every device, virtual machine
   or rack whose name doesn't follow its rule, that has no name yet, or that
   no rule names, with the suggested names and *Rename selected*.
 - Rules can name virtual machines and racks too. A rule's *Names* field
@@ -53,11 +74,31 @@ New:
   "Naming convention for "Switches" is AMS1-SW###-R02, suggested name:
   AMS1-SW014-R02", instead of only the rule's name.
 
+Changed:
+
+- Menu items, page titles and card titles use Title Case, as NetBox does
+  (*Naming Rules*, *Naming Report*).
+- The locked name field takes its gray from the NetBox theme only, so it
+  follows dark mode and custom themes.
+- Tested with netbox-change-approval 0.4.0.
+
 Fixed:
 
-- Changing what a rule names (say from devices to racks) on the rule form
-  kept the old kind's conditions, such as device roles, out of sight. The
-  API then refused every edit of the rule. They are now cleared.
+- Security: an advanced condition could look into data sources (their
+  credentials), webhooks and their secrets, object permissions and the
+  change log, so someone who may edit rules could read them one character
+  at a time through the rule preview. Such conditions are now refused.
+- A rule page listed and counted devices, virtual machines and racks the
+  user may not view. It now shows only those they may.
+- A rule that reads its number from the primary IP and refuses names that
+  don't fit refused a correctly typed name on a new device, because a new
+  device has no primary IP yet. The name is now checked by its shape until
+  the device has one.
+- The rule page and the preview were slow for rules with regions,
+  locations or roles that have many children.
+- The virtual machine form showed no name once a virtual machine type was
+  chosen: NetBox redraws the form then, and the name hint stayed on the old
+  field.
 - *Rename selected to the suggested names* on a rule page had no
   checkboxes to select with.
 - With two rules on the same priority, the one first by name won, even

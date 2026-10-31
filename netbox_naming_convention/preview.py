@@ -13,13 +13,14 @@ import re
 from django.utils.translation import gettext as _
 
 from .matching import find_rule, rule_matches, rule_objects, rules_queryset
-from .naming import _render, suggest
+from .naming import render_name, suggest
 
 #: Objects of the rule shown in the preview.
 PREVIEW_LIMIT = 10
 
 #: Fields of the rule form whose errors make the preview pointless.
-NAME_FIELDS = ('template', 'name_filters', 'ip_pattern', 'skip_numbers', 'number_digits', 'number_last')
+NAME_FIELDS = ('template', 'name_filters', 'ip_pattern', 'skip_numbers', 'number_digits', 'number_last',
+               'member_suffix')
 
 #: Stands in for the primary key of a rule not saved yet (Django needs one
 #: before many-to-many values can be read; no rule has 0).
@@ -90,7 +91,7 @@ def preview(form, user, obj=None):
         return {'errors': errors}
     rule = rule_draft(form)
     model = rule.kind.model
-    out, _has_number = _render(obj or model(), rule)
+    out, _has_number = render_name(obj or model(), rule)
     if out.error:
         return {'errors': [out.error]}
     visible = model.objects.restrict(user, 'view')

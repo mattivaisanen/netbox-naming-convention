@@ -1,12 +1,12 @@
 {% extends 'base/layout.html' %}
 {% load i18n %}
 
-{% block title %}{% trans "Name template reference" %}{% endblock %}
+{% block title %}{% trans "Name Template Reference" %}{% endblock %}
 
 {% block content %}
 <div class="row">
   <div class="col col-12 col-xl-10">
-    <p class="text-muted">
+    <p class="text-secondary">
       {% blocktrans trimmed %}
         A template is literal text with parts in braces. A value can be changed by filters, applied from
         left to right: <code>{site.name|first:3|upper}</code>. A value that is empty makes the name wait for
@@ -15,7 +15,7 @@
       {% endblocktrans %}
     </p>
     <div class="card">
-      <h2 class="card-header">{% trans "Text and number" %}</h2>
+      <h2 class="card-header">{% trans "Text and Number" %}</h2>
       <table class="table table-hover attr-table">
         {% for syntax, text in other %}
         <tr><th scope="row" class="font-monospace">{{ syntax }}</th><td>{{ text }}</td></tr>
@@ -29,7 +29,7 @@
           {% for other in kinds %}{% if other != kind %}<a href="?object_type={{ other.key }}" class="ms-2">{{ other.label }}</a>{% endif %}{% endfor %}
         </span>
       </h2>
-      <div class="card-body text-muted pb-0">
+      <div class="card-body text-secondary pb-0">
         {% blocktrans trimmed %}
           A value is a place and an attribute. <code>parent</code> goes one level up in roles, regions,
           site groups and locations; <code>cf.&lt;name&gt;</code> reads a custom field.
@@ -43,7 +43,7 @@
     </div>
     <div class="card">
       <h2 class="card-header">{% trans "Filters" %}</h2>
-      <div class="card-body text-muted pb-0">
+      <div class="card-body text-secondary pb-0">
         {% blocktrans trimmed %}
           <code>upper</code>, <code>lower</code>, <code>ascii</code>, <code>alnum</code>, <code>nospace</code> and
           <code>replace</code> also work on the whole name: put them in the rule's <em>Filters for the whole

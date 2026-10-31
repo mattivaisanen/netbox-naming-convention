@@ -11,7 +11,7 @@
     <div class="mb-2">
       <span class="text-secondary">{{ tried.object }}:</span>
       {% if tried.name %}<span class="font-monospace fw-bold">{{ tried.name }}</span>{% endif %}
-      {% if tried.note %}<span class="text-muted">{{ tried.note }}</span>{% endif %}
+      {% if tried.note %}<span class="text-secondary">{{ tried.note }}</span>{% endif %}
       {% if tried.why %}<div class="text-warning">{{ tried.why }}</div>{% endif %}
     </div>
   {% endif %}
@@ -22,16 +22,16 @@
       {% for row in rows %}
         <tr>
           <td><a href="{{ row.object.get_absolute_url }}" target="_blank">{{ row.object }}</a></td>
-          <td>{% if row.name %}<span class="font-monospace">{{ row.name }}</span> {% endif %}<span class="text-muted">{{ row.note }}</span></td>
+          <td>{% if row.name %}<span class="font-monospace">{{ row.name }}</span> {% endif %}<span class="text-secondary">{{ row.note }}</span></td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
     {% if more %}<div class="form-text">{% blocktrans with n=rows|length kinds=kind.label_plural %}The first {{ n }} {{ kinds }} of this rule.{% endblocktrans %}</div>{% endif %}
   {% elif needs_kind %}
-    <div class="text-muted">{% trans "Pick a role or device type to see the devices of this rule, or a device above to try the template on it." %}</div>
+    <div class="text-secondary">{% trans "Pick a role or device type to see the devices of this rule, or a device above to try the template on it." %}</div>
   {% else %}
-    <div class="text-muted">{% blocktrans with kinds=kind.label_plural %}No {{ kinds }} match this rule yet. Pick one above to try the template on it.{% endblocktrans %}</div>
+    <div class="text-secondary">{% blocktrans with kinds=kind.label_plural %}No {{ kinds }} match this rule yet. Pick one above to try the template on it.{% endblocktrans %}</div>
   {% endif %}
   <div class="form-text">{% trans "Nothing is saved or renamed here." %}</div>
 {% endif %}
