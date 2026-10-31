@@ -42,11 +42,16 @@
         {% if object.number_source == 'ip' %}
         <tr><th scope="row">{% trans "IP pattern" %}</th><td class="font-monospace">{{ object.ip_pattern }}</td></tr>
         {% endif %}
+        {% if object.letters %}
+        <tr><th scope="row">{% trans "Counter" %}</th><td>{% trans "Letters" %}</td></tr>
+        {% else %}
         <tr><th scope="row">{% trans "Digits" %}</th><td>{{ object.number_digits }}</td></tr>
-        <tr><th scope="row">{% trans "Range" %}</th><td>{{ object.number_first }} &ndash; {{ object.last_number }}</td></tr>
+        {% endif %}
+        <tr><th scope="row">{% trans "Range" %}</th><td>{{ object.first_text }} &ndash; {{ object.last_text }}</td></tr>
         <tr><th scope="row">{% trans "Never handed out" %}</th><td>{{ object.skip_numbers|placeholder }}</td></tr>
         <tr><th scope="row">{% trans "Fill gaps" %}</th><td>{% checkmark object.fill_gaps %}</td></tr>
         <tr><th scope="row">{% trans "Number scope" %}</th><td>{{ object.get_number_scope_display }}</td></tr>
+        <tr><th scope="row">{% trans "Member suffix" %}</th><td class="font-monospace">{{ object.member_suffix|placeholder }}</td></tr>
       </table>
     </div>
     <div class="card">

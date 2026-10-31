@@ -11,7 +11,7 @@ from ipam.models import IPAddress
 from utilities.exceptions import AbortRequest
 
 from ..models import EnforcementChoices, NamingRule, NamingSeries, NumberScopeChoices, NumberSourceChoices
-from ..naming import suggest
+from ..naming import follows, suggest
 from .utils import NetBoxData
 
 
@@ -201,6 +201,24 @@ class NamingTests(NetBoxData, TestCase):
             self.device(name='NLUTSWI005_RA9', rack=self.ra9)  # number already used
         self.assertIn('already used', str(caught.exception))
 
+    def test_stack_members_share_a_number(self):
+        self.switches.template = 'SW{n}'
+        self.switches.member_suffix = '-#'
+        self.switches.enforcement = EnforcementChoices.REFUSE
+        self.switches.fill_gaps = True
+        self.switches.number_first = 5
+        self.switches.save()
+        first = self.device(name='SW005-1')
+        self.device(name='SW005-2')  # another member of the same stack
+        self.assertTrue(follows(first)[1])
+        self.assertEqual(suggest(first).name, 'SW005-1')  # keeps its ending
+        self.assertEqual(self.device().name, 'SW006')  # 5 is used, not a gap
+        with self.assertRaises(ValidationError):
+            self.device(name='SW007-A')
+        self.switches.member_suffix = '#'
+        with self.assertRaises(ValidationError):
+            self.switches.full_clean()
+
     def test_warn_allows_any_name(self):
         self.assertEqual(self.device(name='whatever', rack=self.ra8).name, 'whatever')
 
@@ -270,6 +288,50 @@ class NamingTests(NetBoxData, TestCase):
         device = Device(site=self.utrecht, role=self.access, device_type=self.c9300, rack=self.ra8)
         device.save()
         self.assertEqual(device.name, 'NLUTSWI001_RA8')
+
+
+class LetterCounterTests(NetBoxData, TestCase):
+    """{rack.name}{a-z}: the rack's name and one letter, a to z."""
+    @classmethod
+    def setUpTestData(cls):
+        cls.make_netbox()
+        cls.letters = cls.rule(roles=[cls.switch], template='{rack.name}{a-z}', number_scope=NumberScopeChoices.NAME)
+
+    def test_letters_count_per_rack(self):
+        self.assertEqual(self.device(rack=self.ra8).name, 'RA8a')
+        self.assertEqual(self.device(rack=self.ra8).name, 'RA8b')
+        self.assertEqual(self.device(rack=self.ra9).name, 'RA9a')
+        # Typed in another case or before the rule existed, a name still counts.
+        self.device(name='RA8D', rack=self.ra8)
+        self.assertEqual(self.device(rack=self.ra8).name, 'RA8e')
+
+    def test_follows_and_refuses(self):
+        self.letters.enforcement = EnforcementChoices.REFUSE
+        self.letters.skip_numbers = 'a'
+        self.letters.save()
+        self.assertEqual(self.device(rack=self.ra8).name, 'RA8b')
+        for name in ('RA8', 'RA8bb', 'RA81', 'RA8a'):
+            with self.assertRaises(ValidationError, msg=name):
+                self.device(name=name, rack=self.ra8)
+        device = self.device(name='RA8z', rack=self.ra8)
+        self.assertEqual(follows(device), (self.letters, True))
+
+    def test_series_full_after_z(self):
+        self.letters.number_last = 2
+        self.letters.save()
+        self.device(rack=self.ra8)
+        self.device(rack=self.ra8)
+        self.assertIn('full', suggest(self.device(rack=self.ra8, save=False)).error)
+
+    def test_rule_checks(self):
+        self.letters.number_last = 27
+        with self.assertRaises(ValidationError):
+            self.letters.full_clean()
+        self.letters.number_last = None
+        self.letters.number_source = NumberSourceChoices.IP
+        self.letters.ip_pattern = '*.*.*.N'
+        with self.assertRaises(ValidationError):
+            self.letters.full_clean()
 
 
 class NumberFromIPTests(NetBoxData, TestCase):

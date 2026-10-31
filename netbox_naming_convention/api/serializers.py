@@ -55,7 +55,8 @@ class NamingRuleSerializer(NetBoxModelSerializer):
             'device_types', 'vm_types', 'clusters', 'rack_roles', 'rack_types', 'regions', 'site_groups', 'sites',
             'locations', 'tenants', 'platforms', 'statuses', 'match_tags',
             'tag_match', 'constraint', 'template', 'name_filters', 'required_values', 'number_source', 'ip_pattern',
-            'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'enforcement',
+            'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'member_suffix',
+            'enforcement',
             'comments', 'tags',
             'custom_fields', 'created', 'last_updated',
         )
