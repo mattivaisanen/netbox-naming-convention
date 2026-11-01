@@ -18,6 +18,7 @@ class NamingRuleTable(NetBoxTable):
     sites = columns.ManyToManyColumn(linkify_item=True)
     match_tags = columns.ManyToManyColumn(verbose_name=_('Tags'))
     number_source = columns.ChoiceFieldColumn()
+    name_match = columns.ChoiceFieldColumn()
     enforcement = columns.ChoiceFieldColumn()
     fill_gaps = columns.BooleanColumn()
     tags = columns.TagColumn(url_name='plugins:netbox_naming_convention:namingrule_list')
@@ -25,7 +26,8 @@ class NamingRuleTable(NetBoxTable):
     class Meta(NetBoxTable.Meta):
         model = NamingRule
         fields = (
-            'pk', 'id', 'name', 'enabled', 'priority', 'object_type', 'template', 'roles', 'device_types', 'sites',
+            'pk', 'id', 'name', 'enabled', 'priority', 'object_type', 'template', 'name_match', 'roles', 'device_types',
+            'sites',
             'match_tags', 'number_source', 'number_digits', 'number_first', 'number_last', 'fill_gaps', 'number_scope',
             'member_suffix', 'enforcement', 'description', 'tags', 'created', 'last_updated',
         )

@@ -52,7 +52,7 @@ def rule_overview(rule, user):
                 'example': obj,
             })
             number = number_in_name(
-                obj.name, out.prefix, out.suffix, rule.number_scope, rule.member_suffix, rule.letters,
+                obj.name, out.prefix, out.suffix, rule.number_scope, rule.member_suffix, rule.letters, rule.name_match,
             )
             if number is not None:
                 entry['count'] += 1

@@ -82,12 +82,12 @@ environment (on a standard install, `source /opt/netbox/venv/bin/activate`
 first):
 
 ```bash
-pip install git+https://github.com/mattivaisanen/netbox-naming-convention.git@v0.3.0
+pip install git+https://github.com/mattivaisanen/netbox-naming-convention.git@v0.4.0
 ```
 
 Releases are listed under
 [Releases](https://github.com/mattivaisanen/netbox-naming-convention/releases);
-leave out `@v0.3.0` to install the latest code from `main`.
+leave out `@v0.4.0` to install the latest code from `main`.
 
 Add it to `configuration.py`:
 
@@ -138,6 +138,7 @@ name. Set different priorities when you want a fixed order.
 | Template | How the name is built, see below. |
 | Wait for | The fields that must be set before the name is filled in, besides the values the template uses, such as site, location, rack, role, device type, cluster, tenant, platform, serial number or asset tag (the form lists those of the rule's kind). New device rules wait for site, role and device type (what the device form requires), rack rules for the site, virtual machine rules for nothing. |
 | Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |
+| Name match | *Exact* (default): the name is exactly what the rule builds. *Starts with*: anything may follow it, so `APP01-old` and `APP01-test` both follow `APP{n}` as number 1. *Contains*: anything may come before and after it. *Ends with*: anything may come before it. Numbers are read from such names too, so their numbers count as used. New names are suggested without extra text; an edited object keeps its own. The suggestion hint marks the free part with `*`, as in `APP##*`. |
 | Number source | *Running number* or *From primary IP*. |
 | Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. Not used by a letter counter. |
 | First number, last number | Running numbers only. The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3), or 26 (`z`) for a letter counter, where `a` is 1. |

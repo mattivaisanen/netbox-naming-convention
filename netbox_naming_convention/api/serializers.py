@@ -17,8 +17,8 @@ from virtualization.models import Cluster, VirtualMachineType
 
 from ..kinds import KINDS
 from ..models import (
-    EnforcementChoices, NamingRule, NumberScopeChoices, NumberSourceChoices, ObjectTypeChoices, ReservedName,
-    TagMatchChoices,
+    EnforcementChoices, NameMatchChoices, NamingRule, NumberScopeChoices, NumberSourceChoices, ObjectTypeChoices,
+    ReservedName, TagMatchChoices,
 )
 from ..naming import RESERVE_LIMIT
 
@@ -48,6 +48,7 @@ class NamingRuleSerializer(NetBoxModelSerializer):
     tag_match = ChoiceField(choices=TagMatchChoices, required=False)
     number_source = ChoiceField(choices=NumberSourceChoices, required=False)
     number_scope = ChoiceField(choices=NumberScopeChoices, required=False)
+    name_match = ChoiceField(choices=NameMatchChoices, required=False)
     enforcement = ChoiceField(choices=EnforcementChoices, required=False)
 
     class Meta:
@@ -56,9 +57,9 @@ class NamingRuleSerializer(NetBoxModelSerializer):
             'id', 'url', 'display', 'name', 'description', 'enabled', 'priority', 'object_type', 'roles',
             'device_types', 'vm_types', 'clusters', 'rack_roles', 'rack_types', 'regions', 'site_groups', 'sites',
             'locations', 'tenants', 'platforms', 'statuses', 'match_tags',
-            'tag_match', 'constraint', 'template', 'name_filters', 'required_values', 'number_source', 'ip_pattern',
-            'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope', 'member_suffix',
-            'enforcement',
+            'tag_match', 'constraint', 'template', 'name_filters', 'name_match', 'required_values', 'number_source',
+            'ip_pattern', 'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope',
+            'member_suffix', 'enforcement',
             'comments', 'tags',
             'custom_fields', 'created', 'last_updated',
         )

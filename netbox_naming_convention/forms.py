@@ -75,8 +75,8 @@ class NamingRuleForm(NetBoxModelForm):
         model = NamingRule
         fields = (
             'name', 'description', 'enabled', 'priority', 'object_type', *NamingRule.CONDITION_FIELDS, 'statuses',
-            'tag_match', 'constraint', 'template', 'name_filters', 'required_values', 'number_source', 'ip_pattern',
-            'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope',
+            'tag_match', 'constraint', 'template', 'name_filters', 'name_match', 'required_values', 'number_source',
+            'ip_pattern', 'number_digits', 'number_first', 'number_last', 'skip_numbers', 'fill_gaps', 'number_scope',
             'member_suffix', 'enforcement', 'comments', 'tags',
         )
         widgets = {
@@ -99,6 +99,8 @@ class NamingRuleForm(NetBoxModelForm):
         self.kind = kind
         # Left out (older scripts, the API's forms): a device rule.
         self.fields['object_type'].required = False
+        # Left out (forms from before name matching): the whole name.
+        self.fields['name_match'].required = False
         self._fit_conditions(kind)
         self._fit_number(kind)
         self.fields['template'].help_text = format_html(
@@ -130,7 +132,7 @@ class NamingRuleForm(NetBoxModelForm):
                 *[name for name in own if name not in required], *self.SHARED_CONDITIONS,
                 name=_('Other conditions (optional)') if required else _('Conditions (optional)'),
             ),
-            FieldSet('template', 'name_filters', 'required_values', name=_('Name')),
+            FieldSet('template', 'name_filters', 'name_match', 'required_values', name=_('Name')),
             FieldSet('preview_object', name=_('Preview')),
             FieldSet(*number, name=_('Number')),
             FieldSet('enforcement', name=_('Enforcement')),
@@ -176,6 +178,9 @@ class NamingRuleForm(NetBoxModelForm):
 
     def clean_object_type(self):
         return self.cleaned_data.get('object_type') or DEVICE.key
+
+    def clean_name_match(self):
+        return self.cleaned_data.get('name_match') or NamingRule._meta.get_field('name_match').default
 
     def clean(self):
         super().clean()
