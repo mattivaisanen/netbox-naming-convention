@@ -13,7 +13,7 @@ from .. import filtersets
 from ..kinds import KINDS
 from ..matching import find_rule
 from ..models import NamingRule, ReservedName
-from ..naming import reserve, suggest
+from ..naming import free_reservations, reserve, suggest
 from . import serializers
 
 
@@ -33,6 +33,10 @@ class ReservedNameViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixi
     queryset = ReservedName.objects.select_related('rule')
     serializer_class = serializers.ReservedNameSerializer
     filterset_fields = ('rule', 'object_type', 'name')
+
+    def perform_destroy(self, instance):
+        # Its number goes back to the series, as when freed on the rule page.
+        free_reservations(ReservedName.objects.filter(pk=instance.pk))
 
 
 def object_from_values(user, kind, values):

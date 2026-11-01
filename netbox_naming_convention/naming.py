@@ -14,6 +14,7 @@ suggests, and taking a number for real.
   the rule's list of objects that don't).
 - `reserve()` takes names ahead of time, before their objects exist. Their
   numbers count as used until the reservation is used up or expires.
+  `free_reservations()` removes reservations and gives their numbers back.
 
 A rule's member suffix (such as "-#") lets stack members share a number:
 SW005-1 and SW005-2 both follow the rule SW{n} and both are number 5.
@@ -36,8 +37,8 @@ from .numbering import (
 from .template import NUMBER, TemplateError, filter_name
 
 __all__ = (
-    'Suggestion', 'suggest', 'assign', 'remember', 'release', 'reserve', 'check_typed_name', 'follows', 'resolve',
-    'render_name', 'number_in_name', 'split_name', 'mark_auto', 'is_auto', 'unmark_auto',
+    'Suggestion', 'suggest', 'assign', 'remember', 'release', 'reserve', 'free_reservations', 'check_typed_name',
+    'follows', 'resolve', 'render_name', 'number_in_name', 'split_name', 'mark_auto', 'is_auto', 'unmark_auto',
 )
 
 
@@ -191,6 +192,16 @@ def _reserved(series, name=None):
     return set(rows.values_list('number', flat=True))
 
 
+def _expired(series):
+    """Numbers of the series' expired reservations: free again, handed out first like released ones."""
+    if not series:
+        return set()
+    rows = ReservedName.objects.filter(series=series, number__isnull=False).exclude(
+        pk__in=ReservedName.objects.active(),
+    )
+    return set(rows.values_list('number', flat=True))
+
+
 def _finish(out, rule, number, member=''):
     out.number = number
     name = out.prefix + rule.format_number(number) + out.suffix + member
@@ -249,7 +260,7 @@ def _pick(out, rule, obj, series, keep_current, taken=None):
         number = next_number(
             used, first=rule.number_first, last=rule.last_number, skip=rule.skip_ranges,
             fill_gaps=rule.fill_gaps, high_water=series.high_water if series else 0,
-            released=series.released if series else (),
+            released=set(series.released if series else ()) | _expired(out.series),
         )
     except NumberError:
         out.error = _('The series {series} is full: no free numbers from {first} to {last}.').format(
@@ -363,8 +374,11 @@ def reserve(obj, rule, count=1, *, expires=None, description='', user=None):
     with transaction.atomic():
         NamingSeries.objects.bulk_create([NamingSeries(key=out.series)], ignore_conflicts=True)
         series = NamingSeries.objects.select_for_update().get(key=out.series)
-        # An expired reservation gives its number back (with gap filling) and its name.
-        ReservedName.objects.filter(series=out.series).exclude(pk__in=ReservedName.objects.active()).delete()
+        # An expired reservation gives its number and its name back.
+        free_reservations(
+            ReservedName.objects.filter(series=out.series).exclude(pk__in=ReservedName.objects.active()),
+        )
+        series.refresh_from_db()
         taken, picked = {}, []
         for _i in range(count):
             hint = _pick(replace(out), rule, obj, series, keep_current=False, taken=taken)
@@ -396,6 +410,26 @@ def _reserve_fixed(out, rule, count, fields):
     if ReservedName.objects.filter(object_type=rule.kind.key, name__iexact=name).exists():
         return [], _('{name} is reserved already.').format(name=name)
     return [ReservedName.objects.create(name=name, **fields)], None
+
+
+def free_reservations(reservations):
+    """
+    Delete `reservations` (a ReservedName queryset) and give their numbers
+    back to their series, so they are handed out again first, even with gap
+    filling off. Returns how many were deleted.
+    """
+    with transaction.atomic():
+        rows = list(reservations.filter(number__isnull=False).values_list('series', 'number'))
+        deleted, _counts = reservations.delete()
+        numbers = {}
+        for key, number in rows:
+            numbers.setdefault(key, set()).add(number)
+        for key, freed in numbers.items():
+            series = NamingSeries.objects.select_for_update().filter(key=key).first()
+            if series is not None and not freed <= set(series.released):
+                series.released = sorted(set(series.released) | freed)
+                series.save(update_fields=('released', 'last_updated'))
+    return deleted
 
 
 def remember(obj, rule=None):
@@ -448,8 +482,9 @@ def follows(obj, rule=None):
     if not has_number:
         return rule, name.lower() == out.prefix.lower()
     parts = split_name(name, out.prefix, out.suffix, rule.member_suffix, rule.letters)
-    # A letter is always one character; digits must be padded to the rule's digits.
-    if parts is None or (not rule.letters and len(parts[1]) < rule.number_digits):
+    # Digits must be padded exactly as the rule pads them: SW05 and SW0005 don't
+    # follow a 3-digit rule. A letter is one character, of either case.
+    if parts is None or (not rule.letters and parts[1] != rule.format_number(parts[0])):
         return rule, False
     number = parts[0]
     if rule.number_source == NumberSourceChoices.IP:

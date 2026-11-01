@@ -14,6 +14,7 @@ SUGGEST = 'plugins-api:netbox_naming_convention-api:suggest'
 RULES = 'plugins-api:netbox_naming_convention-api:namingrule-list'
 RESERVE = 'plugins-api:netbox_naming_convention-api:reserve'
 RESERVATIONS = 'plugins-api:netbox_naming_convention-api:reservedname-list'
+RESERVATION = 'plugins-api:netbox_naming_convention-api:reservedname-detail'
 
 
 @override_settings(LOGIN_REQUIRED=True, EXEMPT_VIEW_PERMISSIONS=['*'])
@@ -70,6 +71,17 @@ class APITests(NetBoxData, TestCase):
         response = self.post(reverse('dcim-api:device-list'), self.device_data())
         self.assertEqual(response.json()['name'], 'NLUTSWI001_RA8')
         self.assertFalse(ReservedName.objects.exists())
+
+    def test_freed_reservations_give_their_numbers_back(self):
+        # Gap filling is off: freed numbers still come back before new ones.
+        yesterday = datetime.date.today() - datetime.timedelta(days=1)
+        self.post(reverse(RESERVE), self.device_data(expires=yesterday.isoformat()))
+        response = self.post(reverse('dcim-api:device-list'), self.device_data())
+        self.assertEqual(response.json()['name'], 'NLUTSWI001_RA8')  # the expired one
+        kept = self.post(reverse(RESERVE), self.device_data()).json()[0]
+        self.client.delete(reverse(RESERVATION, args=[kept['id']]))
+        response = self.post(reverse('dcim-api:device-list'), self.device_data())
+        self.assertEqual(response.json()['name'], kept['name'])  # the deleted one
 
     def test_create_with_tags_rule(self):
         self.rule(roles=[self.router], match_tags=[self.lab], template='NLUTROT{n}', priority=1)

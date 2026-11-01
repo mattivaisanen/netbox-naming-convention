@@ -162,9 +162,10 @@ lists the reserved names; *Free selected* gives them back.
 
 While a name is reserved, nobody else gets its number: not the add form,
 not the API, not a name typed under *Refuse*. Saving an object with the
-reserved name (type it into the name field) uses the reservation up. After
-the expiry day the number is free again with gap filling on; without gap
-filling it is never handed out again, like a deleted device's. Rules that
+reserved name (type it into the name field) uses the reservation up. A
+reservation that expires or is freed was never used, so its number goes
+back to the series and is handed out again first, even with gap filling
+off (like the number of a device that was never approved). Rules that
 read the number from the IP can't reserve names.
 
 ### Preview
