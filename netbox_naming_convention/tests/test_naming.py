@@ -200,6 +200,9 @@ class NamingTests(NetBoxData, TestCase):
         with self.assertRaises(ValidationError) as caught:
             self.device(name='NLUTSWI005_RA9', rack=self.ra9)  # number already used
         self.assertIn('already used', str(caught.exception))
+        # Padded differently from the rule's 3 digits.
+        with self.assertRaises(ValidationError):
+            self.device(name='NLUTSWI0006_RA8', rack=self.ra8)
 
     def test_stack_members_share_a_number(self):
         self.switches.template = 'SW{n}'

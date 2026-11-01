@@ -18,7 +18,7 @@ from .kinds import KINDS
 from .matching import find_rule, ordered_rules, rule_objects, rules_queryset
 from .api.views import object_from_values
 from .models import NamingRule, NamingSeries, ReservedName
-from .naming import follows, number_in_name, render_name, reserve, suggest
+from .naming import follows, free_reservations, number_in_name, render_name, reserve, suggest
 from .report import GROUPS, REPORT_LIMIT, REPORT_SHOWN, build_report, related_fields
 
 #: Most objects a rule page looks at.
@@ -284,6 +284,6 @@ class NamingRuleUnreserveView(LoginRequiredMixin, View):
     def post(self, request, pk):
         rule = get_object_or_404(NamingRule.objects.restrict(request.user, 'view'), pk=pk)
         pks = [value for value in request.POST.getlist('pk') if value.isdigit()]
-        deleted, _counts = rule.reserved_names.restrict(request.user, 'delete').filter(pk__in=pks).delete()
+        deleted = free_reservations(rule.reserved_names.restrict(request.user, 'delete').filter(pk__in=pks))
         messages.success(request, _('Freed {n} reserved names.').format(n=deleted))
         return redirect(rule.get_absolute_url())

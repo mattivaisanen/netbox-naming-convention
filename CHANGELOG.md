@@ -18,6 +18,12 @@ New:
 
 Fixed:
 
+- A reservation that expired or was freed lost its number for good when
+  gap filling was off. Its number now goes back to the series and is
+  handed out again first.
+- Names padded differently from the rule (`SW0005` or `SW05` for a 3-digit
+  rule) counted as following it. They are now reported as not following,
+  and refused under *Refuse*.
 - With netbox-change-approval: a device whose create request is rejected,
   withdrawn, sent back or expires gives its number back to the series. The
   next device gets it, even with gap filling off and even when later
