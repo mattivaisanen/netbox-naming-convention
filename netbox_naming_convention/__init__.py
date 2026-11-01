@@ -16,7 +16,7 @@ class NamingConventionConfig(PluginConfig):
     name = 'netbox_naming_convention'
     verbose_name = 'Naming Convention'
     description = 'Name devices, virtual machines and racks from rules, with running numbers per series.'
-    version = '0.3.0'
+    version = '0.4.0'
     author = 'Matti'
     base_url = 'naming-convention'
     # Only claim what CI tests (.github/workflows/test.yml).

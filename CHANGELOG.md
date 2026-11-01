@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 (2026-11-01)
+
+New:
+
+- *Name match* per rule: *Exact*, *Starts with*, *Contains* or *Ends with*.
+  With *Starts with*, names such as `APP01-old` and `APP01-test` follow the
+  rule `APP{n}`, both as number 1. Numbers in names with extra text count
+  as used, and an edited object keeps its extra text when suggested again.
+  Needs migration 0009.
+
 ## 0.3.0 (2026-11-01)
 
 New:

@@ -10,7 +10,7 @@ from dcim.models import Device, Interface
 from ipam.models import IPAddress
 from utilities.exceptions import AbortRequest
 
-from ..models import EnforcementChoices, NamingRule, NamingSeries, NumberScopeChoices, NumberSourceChoices
+from ..models import EnforcementChoices, NameMatchChoices, NamingRule, NamingSeries, NumberScopeChoices, NumberSourceChoices
 from ..naming import follows, suggest
 from .utils import NetBoxData
 
@@ -221,6 +221,30 @@ class NamingTests(NetBoxData, TestCase):
         self.switches.member_suffix = '#'
         with self.assertRaises(ValidationError):
             self.switches.full_clean()
+
+    def test_name_match_allows_extra_text(self):
+        self.switches.template = 'SW{n}'
+        self.switches.name_match = NameMatchChoices.START
+        self.switches.enforcement = EnforcementChoices.REFUSE
+        self.switches.save()
+        first = self.device(name='SW001-old')
+        self.device(name='SW002-backup')
+        self.assertTrue(follows(first)[1])
+        self.assertEqual(suggest(first).name, 'SW001-old')  # keeps its extra text
+        self.assertEqual(self.device().name, 'SW003')  # suggested names have none
+        with self.assertRaises(ValidationError):
+            self.device(name='x-SW004')  # text before is not allowed by "start"
+        with self.assertRaises(ValidationError) as caught:
+            self.device(name='SW002-other')
+        self.assertIn('already used', str(caught.exception))
+        self.switches.name_match = NameMatchChoices.CONTAINS
+        self.switches.save()
+        self.assertEqual(self.device(name='x-SW004-y').name, 'x-SW004-y')
+        self.assertEqual(self.device().name, 'SW005')
+        self.switches.name_match = NameMatchChoices.END
+        self.switches.save()
+        self.assertTrue(follows(self.device(name='x-SW006'))[1])
+        self.assertFalse(follows(first)[1])
 
     def test_warn_allows_any_name(self):
         self.assertEqual(self.device(name='whatever', rack=self.ra8).name, 'whatever')

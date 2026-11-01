@@ -13,6 +13,11 @@ the series also remembers the highest number it ever handed out
 back. Numbers of devices that were never approved (NamingSeries.released)
 are the exception: they are handed out again first.
 
+A rule's name match (`match`) says where its name may sit in a longer
+one: "exact" (the whole name), "start" (anything may follow), "contains"
+(anything around it) or "end" (anything before it). SRV01_new follows a
+"start" rule SRV{n} and counts as number 1.
+
 A rule counts in digits ({n}: 001, 002, ...) or in letters ({a-z} or
 {A-Z}: a is 1, b is 2, ... z is 26). Numbers are whole numbers either way;
 only how they are written in the name differs (`letters=True`).
@@ -22,8 +27,16 @@ import re
 
 __all__ = (
     'NumberError', 'parse_skip', 'series_key', 'member_regex', 'name_regex', 'used_numbers', 'next_number',
-    'number_from_ip', 'parse_ip_pattern', 'LETTERS', 'letter', 'read_number',
+    'number_from_ip', 'parse_ip_pattern', 'LETTERS', 'letter', 'read_number', 'MATCHES',
 )
+
+#: Name matches (NameMatchChoices): whether text may come before / after the name.
+MATCHES = {
+    'exact': (False, False),
+    'start': (False, True),
+    'contains': (True, True),
+    'end': (True, False),
+}
 
 #: Longest a number may be, in digits.
 MAX_DIGITS = 9
@@ -111,7 +124,7 @@ def member_regex(member_suffix):
     return ''.join(r'[0-9]+' if char == '#' else re.escape(char) for char in member_suffix)
 
 
-def name_regex(prefix, suffix, scope, member_suffix='', letters=False):
+def name_regex(prefix, suffix, scope, member_suffix='', letters=False, match='exact'):
     """
     A regular expression that matches the names of a series and captures
     their number. For PostgreSQL (`name__iregex`) and Python alike, both
@@ -119,22 +132,30 @@ def name_regex(prefix, suffix, scope, member_suffix='', letters=False):
 
     With a member suffix ("-#"), names of stack members such as SW005-1
     match too and count as number 5. With `letters`, the number is one
-    letter (RA8c is number 3 of RA8).
+    letter (RA8c is number 3 of RA8). `match` (see MATCHES) lets other text
+    come before the prefix and/or after the name.
     """
     counter, other = ('([a-z])', 'a-z') if letters else ('([0-9]+)', '0-9')
+    text_before, text_after = MATCHES.get(match, MATCHES['exact'])
+    # Lazy, so the first place the name fits wins (SRV01-SRV02 is number 1).
+    start = '^.*?' if text_before else '^'
     if scope == 'name':
         member = member_regex(member_suffix)
         member = f'({member})?' if member else ''
-        return '^' + re.escape(prefix) + counter + re.escape(suffix) + member + '$'
+        # With text after the name, the number must still end where it ends:
+        # SW0154 is number 154, not 15 followed by "4".
+        guard = f'(?![{other}])' if text_after and not suffix else ''
+        end = '' if text_after else '$'
+        return start + re.escape(prefix) + counter + guard + re.escape(suffix) + member + end
     # Shared scope: whatever follows the number is decoration, but it must not
     # be another digit (AMS1-SW1540 is number 1540, not 154), or another
     # letter for a letter counter (RA8ab is not number 1 of RA8).
-    return '^' + re.escape(prefix) + counter + f'([^{other}]|$)'
+    return start + re.escape(prefix) + counter + f'([^{other}]|$)'
 
 
-def used_numbers(prefix, suffix, scope, model, exclude_pk=None, member_suffix='', letters=False):
+def used_numbers(prefix, suffix, scope, model, exclude_pk=None, member_suffix='', letters=False, match='exact'):
     """Numbers objects of `model` (Device, VirtualMachine, Rack) already have in this series."""
-    pattern = name_regex(prefix, suffix, scope, member_suffix, letters)
+    pattern = name_regex(prefix, suffix, scope, member_suffix, letters, match)
     names = model.objects.filter(name__iregex=pattern)
     if exclude_pk:
         names = names.exclude(pk=exclude_pk)

@@ -37,7 +37,8 @@ from .numbering import LETTERS, MAX_DIGITS, NumberError, letter, parse_ip_patter
 from .template import Template, TemplateError, parse_name_filters
 
 __all__ = (
-    'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NamingRule', 'RequiredValueChoices', 'NamingSeries',
+    'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NameMatchChoices', 'NamingRule',
+    'RequiredValueChoices', 'NamingSeries',
     'NumberScopeChoices', 'NumberSourceChoices', 'ObjectTypeChoices', 'ReservedName',
     'TagMatchChoices',
 )
@@ -60,6 +61,21 @@ class NumberScopeChoices(ChoiceSet):
     CHOICES = (
         (SHARED, _('Shared: counts per text before the number'), 'blue'),
         (NAME, _('Whole name: counts per full name'), 'cyan'),
+    )
+
+
+class NameMatchChoices(ChoiceSet):
+    """Where the rule's name may sit in an object's name (numbering.MATCHES)."""
+    EXACT = 'exact'
+    START = 'start'
+    CONTAINS = 'contains'
+    END = 'end'
+
+    CHOICES = (
+        (EXACT, _('Exact: the whole name'), 'blue'),
+        (START, _('Starts with: anything may follow'), 'cyan'),
+        (CONTAINS, _('Contains: anything around it'), 'purple'),
+        (END, _('Ends with: anything may come before'), 'teal'),
     )
 
 
@@ -224,6 +240,13 @@ class NamingRule(NetBoxModel):
             'not changed. Filters: upper, lower, ascii, alnum, nospace, replace:old:new.'
         ),
     )
+    name_match = models.CharField(
+        verbose_name=_('name match'), max_length=10, choices=NameMatchChoices, default=NameMatchChoices.EXACT,
+        help_text=_(
+            'Whether names may have other text around the rule\'s name. With "Starts with", SRV01-new and '
+            'SRV01-replica both follow SRV{n} as number 1. Suggested names have no extra text.'
+        ),
+    )
     number_source = models.CharField(
         verbose_name=_('number source'), max_length=10, choices=NumberSourceChoices,
         default=NumberSourceChoices.SEQUENCE,
@@ -290,6 +313,9 @@ class NamingRule(NetBoxModel):
 
     def get_number_source_color(self):
         return NumberSourceChoices.colors.get(self.number_source)
+
+    def get_name_match_color(self):
+        return NameMatchChoices.colors.get(self.name_match)
 
     def get_enforcement_color(self):
         return EnforcementChoices.colors.get(self.enforcement)
