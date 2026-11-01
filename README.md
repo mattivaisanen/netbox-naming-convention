@@ -82,12 +82,12 @@ environment (on a standard install, `source /opt/netbox/venv/bin/activate`
 first):
 
 ```bash
-pip install git+https://github.com/mattivaisanen/netbox-naming-convention.git@v0.2.0
+pip install git+https://github.com/mattivaisanen/netbox-naming-convention.git@v0.3.0
 ```
 
 Releases are listed under
 [Releases](https://github.com/mattivaisanen/netbox-naming-convention/releases);
-leave out `@v0.2.0` to install the latest code from `main`.
+leave out `@v0.3.0` to install the latest code from `main`.
 
 Add it to `configuration.py`:
 
