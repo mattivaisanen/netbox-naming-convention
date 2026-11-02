@@ -234,8 +234,12 @@ class NamingTests(NetBoxData, TestCase):
         self.assertEqual(self.device().name, 'SW003')  # suggested names have none
         with self.assertRaises(ValidationError):
             self.device(name='x-SW004')  # text before is not allowed by "start"
+        # A name with extra text shares the number (a replacement next to the
+        # original) and keeps it when suggested again; a plain name does not.
+        other = self.device(name='SW002-other')
+        self.assertEqual(suggest(other).name, 'SW002-other')
         with self.assertRaises(ValidationError) as caught:
-            self.device(name='SW002-other')
+            self.device(name='SW002')
         self.assertIn('already used', str(caught.exception))
         self.switches.name_match = NameMatchChoices.CONTAINS
         self.switches.save()

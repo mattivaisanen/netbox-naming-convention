@@ -180,6 +180,15 @@ class NameParts(NamedTuple):
     before: str = ''
     after: str = ''
 
+    @property
+    def shares_number(self):
+        """
+        Whether the name may use a number another object already has: a
+        stack member (SW005-1) or a name with extra text (SRV01-new next to
+        SRV01). Plain names still get a number of their own.
+        """
+        return bool(self.member or self.before or self.after)
+
 
 def split_name(name, prefix, suffix, member_suffix='', letters=False, match='exact'):
     """
@@ -273,15 +282,16 @@ def _pick(out, rule, obj, series, keep_current, taken=None):
         # gave it, while nobody else has it.
         earlier = AssignedName.of(obj).exclude(name=obj.name or '')
         for name in [obj.name, *earlier.values_list('name', flat=True)]:
-            # A stack member (SW005-1) keeps its number and its ending, even
-            # though the other members of the stack use the same number.
-            # Extra text the name match allows (SRV01-new) is kept too.
+            # A stack member (SW005-1) or a name with extra text the name
+            # match allows (SRV01-new) keeps its number and its extra parts,
+            # even though another object uses the same number.
             parts = split_name(name, out.prefix, out.suffix, rule.member_suffix, rule.letters, rule.name_match)
+            shares = parts is not None and parts.shares_number
             member = parts.member if parts else ''
-            current = parts.number if member else number_in_name(
+            current = parts.number if shares else number_in_name(
                 name, out.prefix, out.suffix, scope, letters=rule.letters, match=rule.name_match,
             )
-            if (current is not None and (member or current not in used)
+            if (current is not None and (shares or current not in used)
                     and rule.number_first <= current <= rule.last_number
                     and not is_skipped(current, rule.skip_ranges)):
                 out.kept_number = True
@@ -563,18 +573,18 @@ def check_typed_name(obj, rule):
         return _('The name does not follow the rule "{rule}".').format(rule=rule) + hint
     if has_number:
         parts = split_name(obj.name, out.prefix, out.suffix, rule.member_suffix, rule.letters, rule.name_match)
-        number, member = parts.number, parts.member
+        number = parts.number
         if is_skipped(number, rule.skip_ranges):
             return _('Number {number} is never handed out by the rule "{rule}".').format(
                 number=rule.format_number(number), rule=rule,
             )
-        # Stack members share their number on purpose; NetBox itself refuses
-        # two objects with the very same name.
+        # Stack members and names with extra text share their number on
+        # purpose; NetBox itself refuses two objects with the very same name.
         used = used_numbers(
             out.prefix, out.suffix, rule.number_scope, rule.kind.model, exclude_pk=obj.pk,
             member_suffix=rule.member_suffix, letters=rule.letters, match=rule.name_match,
         )
-        if not member and number in used:
+        if not parts.shares_number and number in used:
             return _taken(rule, number, out.prefix)
         if number in _reserved(out.series, obj.name):
             return _('Number {number} of {series} is reserved for another name.').format(

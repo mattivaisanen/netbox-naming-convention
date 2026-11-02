@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 (2026-11-02)
+
+Fixed:
+
+- *Starts with* and *Contains*: a name with extra text may share the number
+  of another object, so `APP01-new` is accepted next to `APP01` and keeps
+  its name when suggested again. A plain name still needs a free number.
+
 ## 0.4.0 (2026-11-01)
 
 New:
