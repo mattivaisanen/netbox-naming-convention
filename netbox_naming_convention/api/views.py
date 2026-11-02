@@ -11,7 +11,7 @@ from netbox.api.viewsets import BaseViewSet, NetBoxModelViewSet
 
 from .. import filtersets
 from ..kinds import KINDS
-from ..matching import find_rule
+from ..matching import exclude_tag, find_rule, is_excluded
 from ..models import NamingRule, ReservedName
 from ..naming import free_reservations, reserve, suggest
 from . import serializers
@@ -111,6 +111,8 @@ class SuggestView(APIView):
         result = suggest(obj, keep_current=bool(values.get('id')))
         data = result.as_dict()
         data['current'] = obj.name or None
+        # The form says why no rule names the object.
+        data['excluded'] = exclude_tag() if is_excluded(obj) else None
         return Response(data)
 
 

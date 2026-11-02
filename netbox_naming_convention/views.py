@@ -11,11 +11,14 @@ from django.utils.translation import gettext_lazy as _
 from django.views import View
 
 from netbox.views import generic
-from utilities.views import register_model_view
+from extras.models import Tag
+from utilities.views import get_viewname, register_model_view
 
 from . import filtersets, forms, preview, reference, tables
 from .kinds import KINDS
-from .matching import find_rule, ordered_rules, rule_objects, rules_queryset
+from .matching import (
+    exclude_tag, find_rule, is_excluded, object_tag_slugs, ordered_rules, rule_objects, rules_queryset,
+)
 from .api.views import object_from_values
 from .models import NamingRule, NamingSeries, ReservedName
 from .naming import follows, free_reservations, number_in_name, render_name, reserve, suggest
@@ -170,7 +173,11 @@ def rename_plan(kind, objects, rule=None):
     rows, skipped, taken = [], [], {}
     rules = ordered_rules(rules_queryset(kind))  # once, not per object
     for obj in objects:
-        own = find_rule(obj, rules)
+        slugs = object_tag_slugs(obj)
+        if is_excluded(obj, slugs):
+            skipped.append((obj, _('This {kind} is excluded from naming.').format(kind=kind.label.lower())))
+            continue
+        own = find_rule(obj, rules, tag_slugs=slugs)
         if own is None:
             skipped.append((obj, _('No rule names this {kind}.').format(kind=kind.label.lower())))
             continue
@@ -231,11 +238,35 @@ class NamingReportView(LoginRequiredMixin, View):
         objects = kind.model.objects.restrict(request.user, 'view')
         result = build_report(kind, objects, show)
         table = tables.ReportObjectTable(result.shown, kind, orderable=False)
+        can_change = show in ('drifted', 'unnamed') and request.user.has_perm(kind.permission('change'))
         return render(request, 'netbox_naming_convention/report.html', {
             'report': result, 'kind': kind, 'kinds': KINDS.values(), 'show': show, 'table': table,
-            'limit': REPORT_LIMIT, 'shown_limit': REPORT_SHOWN,
-            'can_rename': show in ('drifted', 'unnamed') and request.user.has_perm(kind.permission('change')),
+            'limit': REPORT_LIMIT, 'shown_limit': REPORT_SHOWN, 'can_rename': can_change,
+            **exclude_context(request, kind, can_change),
         })
+
+
+def exclude_context(request, kind, can_change):
+    """
+    What the report needs to offer *Exclude selected*: the exclusion tag and
+    NetBox's own bulk edit page for the kind. That page shows the objects
+    with the tag filled in under *Add tags* and applies it only when the
+    user confirms, so NetBox's permissions, the change log and
+    netbox-change-approval work as for any bulk edit.
+    """
+    slug = exclude_tag()
+    if not slug:
+        return {'exclude_tag': ''}
+    tag = Tag.objects.filter(slug=slug).first()
+    context = {'exclude_tag': slug, 'exclude_tag_obj': tag}
+    if tag is None:
+        if request.user.has_perm('extras.add_tag'):
+            context['exclude_tag_add_url'] = f"{reverse('extras:tag_add')}?slug={slug}&name={slug}"
+        return context
+    if can_change:
+        context['exclude_url'] = reverse(get_viewname(kind.model, 'bulk_edit'))
+        context['report_url'] = request.get_full_path()
+    return context
 
 
 class NamingReportRenameView(LoginRequiredMixin, View):

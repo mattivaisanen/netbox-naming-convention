@@ -11,16 +11,20 @@ Only rules for the object's kind are tried (kinds.py). Rules are checked by
 priority (then name); the first enabled rule whose conditions all match wins.
 Within a condition any listed value matches. Roles, regions and locations
 match their children too.
+
+Objects with the exclusion tag (setting `exclude_tag`) are left out: no rule
+names them, so nothing is filled in, flagged or refused.
 """
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Manager
 
 from .kinds import DEVICE, kind_of, prepare
 from .models import NamingRule, TagMatchChoices
+from .settings import get_setting
 
 __all__ = (
     'find_rule', 'rule_matches', 'object_tag_slugs', 'rules_queryset', 'ordered_rules', 'rule_objects',
-    'related_object',
+    'related_object', 'exclude_tag', 'is_excluded',
 )
 
 _LOOKUPS = {
@@ -87,6 +91,19 @@ def object_tag_slugs(device):
     if device.pk:
         return set(device.tags.values_list('slug', flat=True))
     return set()
+
+
+def exclude_tag():
+    """Slug of the tag that leaves objects out of naming, or '' when exclusion is off."""
+    return get_setting('exclude_tag') or ''
+
+
+def is_excluded(obj, tag_slugs=None):
+    """True when `obj` has the exclusion tag. `tag_slugs` saves a query when the caller has the tags."""
+    slug = exclude_tag()
+    if not slug:
+        return False
+    return slug in (object_tag_slugs(obj) if tag_slugs is None else tag_slugs)
 
 
 #: Apps and models an advanced condition may not look into. Which rule names
@@ -311,12 +328,18 @@ def rule_matches(rule, obj, tag_slugs=None):
 def find_rule(obj, rules=None, tag_slugs=None):
     """
     The first enabled rule for `obj`'s kind that matches it (see
-    ordered_rules()), or None. `tag_slugs` saves a query per object when the
-    caller has the tags already.
+    ordered_rules()), or None. None also for an object with the exclusion
+    tag. `tag_slugs` saves a query per object when the caller has the tags
+    already.
     """
     kind = kind_of(obj)
     if kind is None:
         return None
+    if exclude_tag():
+        if tag_slugs is None:
+            tag_slugs = object_tag_slugs(obj)
+        if is_excluded(obj, tag_slugs):
+            return None
     prepare(obj)
     for rule in ordered_rules(rules if rules is not None else rules_queryset(kind)):
         if rule.kind is not kind:
@@ -377,7 +400,7 @@ def rule_objects(rule, limit=None, objects=None):
     out = []
     for obj in objects.iterator(chunk_size=500):
         slugs = {t.slug for t in obj.tags.all()}
-        if not rule_matches(rule, obj, tag_slugs=slugs):
+        if is_excluded(obj, slugs) or not rule_matches(rule, obj, tag_slugs=slugs):
             continue
         first = next((r for r in rules if rule_matches(r, obj, tag_slugs=slugs)), None)
         if first is not rule:

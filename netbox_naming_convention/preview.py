@@ -12,7 +12,7 @@ import re
 
 from django.utils.translation import gettext as _
 
-from .matching import find_rule, rule_matches, rule_objects, rules_queryset
+from .matching import exclude_tag, find_rule, is_excluded, rule_matches, rule_objects, rules_queryset
 from .naming import render_name, suggest
 
 #: Objects of the rule shown in the preview.
@@ -65,7 +65,11 @@ def _row(obj, hint):
 def _tried(obj, rule):
     """The preview for the object picked on the form: its name, and whether this rule names it."""
     kind = rule.kind.label.lower()
-    if not rule_matches(rule, obj):
+    if is_excluded(obj):
+        why = _('This {kind} has the tag {tag}, so no rule names it; this is the name the template gives it.').format(
+            kind=kind, tag=exclude_tag(),
+        )
+    elif not rule_matches(rule, obj):
         why = _('This {kind} doesn\'t match the rule\'s conditions; this is the name the template gives it.').format(
             kind=kind,
         )

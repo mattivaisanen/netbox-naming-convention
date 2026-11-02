@@ -52,6 +52,8 @@ Everything below works the same for devices, virtual machines and racks;
 - **Enforcement per rule:** off (only suggest and fill in), warn (names that
   don't fit are flagged on the device and listed on the rule), or refuse (a
   new device or a rename must follow the rule, and may not reuse a number).
+- **Exclusions.** Objects tagged `naming-excluded` are left out of every
+  rule, see *Excluding objects*.
 - **Preview while you write a rule.** The rule form shows the names the
   rule would give its devices, and to any device you pick, as you type.
 - **Rule pages** show each series with its highest number and the next name,
@@ -61,7 +63,7 @@ Everything below works the same for devices, virtual machines and racks;
   so permissions, the change log and approvals work as for any bulk edit.
 - **Naming report** (*Naming → Naming Report*): for devices, virtual
   machines and racks, how many have a name that doesn't follow their rule,
-  have no name yet, aren't named by any rule, or follow their rule, with a
+  have no name yet, aren't named by any rule, are excluded, or follow their rule, with a
   count per rule. Each group lists its objects (the first 100) with the
   rule and the suggested name, and the same *Rename selected* as on a rule
   page, here with each object renamed by its own rule. Only objects you may
@@ -138,7 +140,7 @@ name. Set different priorities when you want a fixed order.
 | Template | How the name is built, see below. |
 | Wait for | The fields that must be set before the name is filled in, besides the values the template uses, such as site, location, rack, role, device type, cluster, tenant, platform, serial number or asset tag (the form lists those of the rule's kind). New device rules wait for site, role and device type (what the device form requires), rack rules for the site, virtual machine rules for nothing. |
 | Filters for the whole name | Optional. Filters applied to the whole name after the template, such as `ascii\|nospace\|lower`: `upper`, `lower`, `ascii`, `alnum`, `nospace`, `replace:old:new`. The number is never changed. |
-| Name match | *Exact* (default): the name is exactly what the rule builds. *Starts with*: anything may follow it, so `APP01-old` and `APP01-test` both follow `APP{n}` as number 1. *Contains*: anything may come before and after it. *Ends with*: anything may come before it. Numbers are read from such names too, so their numbers count as used. New names are suggested without extra text; an edited object keeps its own. The suggestion hint marks the free part with `*`, as in `APP##*`. |
+| Name match | *Exact* (default): the name is exactly what the rule builds. *Starts with*: anything may follow it, so `APP01-old` and `APP01-test` both follow `APP{n}` as number 1. *Contains*: anything may come before and after it. *Ends with*: anything may come before it. Numbers are read from such names too, so their numbers count as used. A name with extra text may share a number already in use (`APP01-new` next to `APP01`); a plain name needs a free one. New names are suggested without extra text; an edited object keeps its own. The suggestion hint marks the free part with `*`, as in `APP##*`. |
 | Number source | *Running number* or *From primary IP*. |
 | Digits | Numbers are padded with zeros to this many digits (3 gives `007`). Numbers from the IP too; 1 leaves them as they are. Not used by a letter counter. |
 | First number, last number | Running numbers only. The range numbers are taken from. The last number defaults to the largest the digits allow (999 for 3), or 26 (`z`) for a letter counter, where `a` is 1. |
@@ -151,6 +153,33 @@ name. Set different priorities when you want a fixed order.
 
 The rule form shows only the number fields that apply to the number source
 you pick.
+
+### Excluding objects
+
+Some objects keep a name of their own, such as legacy gear or a vendor
+appliance. Give them the tag `naming-excluded` (create it under
+*Customization → Tags*; the slug is set with `exclude_tag`, see
+[docs/configuration.md](docs/configuration.md)). A tagged device, virtual
+machine or rack is left out of every rule:
+
+- any name is accepted, also under *Refuse*, and a missing name is not
+  filled in;
+- it is not flagged or listed as not following a rule, and is not renamed
+  from a rule page or the report;
+- its page says it is excluded, and the add form unlocks the name as soon
+  as the tag is picked.
+
+On the naming report, tick objects and press *Exclude selected from
+naming*: NetBox's own bulk edit page opens with the tag filled in under
+*Add tags*, and nothing changes until you apply it there. It needs
+permission to change those objects, and with netbox-change-approval the
+change waits for approval. When the tag doesn't exist yet, the report links
+to creating it.
+
+An excluded object's name still counts when numbers are handed out, so a
+number it holds is not given to another object. The naming report lists
+excluded objects in a group of their own. The tag can also be set in bulk
+edit, CSV import and the REST API.
 
 ### Reserving names
 

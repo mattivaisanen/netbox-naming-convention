@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 (2026-11-02)
+
+New:
+
+- Exclusions: devices, virtual machines and racks tagged
+  `naming-excluded` (setting `exclude_tag`) are left out of every rule.
+  Any name is accepted, nothing is filled in or flagged, and the naming
+  report lists them in their own group, with *Exclude selected from
+  naming* (through NetBox's bulk edit, so permissions and approvals apply).
+  No migration.
+
+Fixed:
+
+- *Starts with* and *Contains*: a name with extra text may share the number
+  of another object, so `APP01-new` is accepted next to `APP01` and keeps
+  its name when suggested again. A plain name still needs a free number.
+
 ## 0.4.0 (2026-11-01)
 
 New:

@@ -7,6 +7,7 @@ from django.test import TestCase, TransactionTestCase
 
 from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
+from extras.models import Tag
 from ipam.models import IPAddress
 from utilities.exceptions import AbortRequest
 
@@ -204,6 +205,17 @@ class NamingTests(NetBoxData, TestCase):
         with self.assertRaises(ValidationError):
             self.device(name='NLUTSWI0006_RA8', rack=self.ra8)
 
+    def test_excluded_devices_skip_the_rules(self):
+        excluded = Tag.objects.create(name='Naming excluded', slug='naming-excluded')
+        self.switches.enforcement = EnforcementChoices.REFUSE
+        self.switches.save()
+        # Any name is accepted, a missing one is not filled in, and nothing is flagged.
+        typed = self.device(name='my-switch', rack=self.ra8, tags=[excluded])
+        self.assertEqual(typed.name, 'my-switch')
+        self.assertEqual(follows(typed), (None, None))
+        self.assertIsNone(self.device(rack=self.ra8, tags=[excluded]).name)
+        self.assertEqual(self.device(rack=self.ra8).name, 'NLUTSWI001_RA8')
+
     def test_stack_members_share_a_number(self):
         self.switches.template = 'SW{n}'
         self.switches.member_suffix = '-#'
@@ -234,8 +246,12 @@ class NamingTests(NetBoxData, TestCase):
         self.assertEqual(self.device().name, 'SW003')  # suggested names have none
         with self.assertRaises(ValidationError):
             self.device(name='x-SW004')  # text before is not allowed by "start"
+        # A name with extra text shares the number (a replacement next to the
+        # original) and keeps it when suggested again; a plain name does not.
+        other = self.device(name='SW002-other')
+        self.assertEqual(suggest(other).name, 'SW002-other')
         with self.assertRaises(ValidationError) as caught:
-            self.device(name='SW002-other')
+            self.device(name='SW002')
         self.assertIn('already used', str(caught.exception))
         self.switches.name_match = NameMatchChoices.CONTAINS
         self.switches.save()
