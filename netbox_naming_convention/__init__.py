@@ -16,7 +16,7 @@ class NamingConventionConfig(PluginConfig):
     name = 'netbox_naming_convention'
     verbose_name = 'Naming Convention'
     description = 'Name devices, virtual machines and racks from rules, with running numbers per series.'
-    version = '0.4.1'
+    version = '0.5.0'
     author = 'Matti'
     base_url = 'naming-convention'
     # Only claim what CI tests (.github/workflows/test.yml).
@@ -28,6 +28,9 @@ class NamingConventionConfig(PluginConfig):
         # instead. False leaves the forms as NetBox has them (device names are
         # still filled in on save).
         'device_form': True,
+        # Objects with this tag are left out of naming: no rule names,
+        # flags or refuses them. Empty or None turns exclusion off.
+        'exclude_tag': 'naming-excluded',
     }
 
     menu = 'navigation.menu'

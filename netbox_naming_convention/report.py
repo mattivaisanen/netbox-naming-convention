@@ -7,13 +7,14 @@ Every object the user may see is put in one group:
 - *follows*: its name fits the rule that names it;
 - *drifted*: it has a name that doesn't fit its rule;
 - *unnamed*: a rule names it, but it has no name (devices made before the rule);
-- *no_rule*: no enabled rule names it.
+- *no_rule*: no enabled rule names it;
+- *excluded*: it has the exclusion tag, so no rule names it on purpose.
 
 The report reads only; renaming goes through the rename page like on a rule.
 """
 from dataclasses import dataclass, field
 
-from .matching import find_rule, ordered_rules, rules_queryset
+from .matching import find_rule, is_excluded, ordered_rules, rules_queryset
 from .naming import follows, suggest
 
 #: Most objects the report looks at.
@@ -21,7 +22,7 @@ REPORT_LIMIT = 5000
 #: Most objects of a group listed (with a suggested name).
 REPORT_SHOWN = 100
 
-GROUPS = ('drifted', 'unnamed', 'no_rule', 'follows')
+GROUPS = ('drifted', 'unnamed', 'no_rule', 'excluded', 'follows')
 
 
 @dataclass
@@ -55,7 +56,10 @@ def related_fields(kind):
 
 def group_of(obj, rules):
     """(group, rule) for one object; `rules` are the kind's rules in order."""
-    rule = find_rule(obj, rules, tag_slugs={tag.slug for tag in obj.tags.all()})
+    slugs = {tag.slug for tag in obj.tags.all()}
+    if is_excluded(obj, slugs):
+        return 'excluded', None
+    rule = find_rule(obj, rules, tag_slugs=slugs)
     if rule is None:
         return 'no_rule', None
     if not obj.name:

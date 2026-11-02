@@ -8,6 +8,7 @@ from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
 
 from core.models import ObjectChange, ObjectType
+from extras.models import Tag
 
 from .. import reference, template
 from ..kinds import KINDS
@@ -287,10 +288,12 @@ class ViewTests(NetBoxData, TestCase):
         # Made before the rule (bulk_create skips the plugin's save hooks).
         unnamed, = Device.objects.bulk_create([self.device(rack=self.ra8, save=False)])
         router = self.device(name='r1', role=self.router)
+        excluded = Tag.objects.create(name='Naming excluded', slug='naming-excluded')
+        self.device(name='legacy-sw', rack=self.ra8, tags=[excluded])
         url = reverse(URL + 'report')
         page = self.client.get(url)
         report = page.context['report']
-        self.assertEqual(report.counts, {'follows': 1, 'drifted': 1, 'unnamed': 1, 'no_rule': 1})
+        self.assertEqual(report.counts, {'follows': 1, 'drifted': 1, 'unnamed': 1, 'no_rule': 1, 'excluded': 1})
         self.assertEqual([(entry.rule, entry.count, entry.drifted) for entry in report.rules],
                          [(self.switches, 3, 2)])
         self.assertEqual([obj.pk for obj in report.shown], [drifted.pk])
@@ -307,6 +310,20 @@ class ViewTests(NetBoxData, TestCase):
         # Racks have their own tab.
         page = self.client.get(url, {'object_type': 'rack'})
         self.assertEqual(page.context['report'].counts['no_rule'], 2)
+
+    def test_exclude_from_the_report(self):
+        drifted = self.device(name='old-1', rack=self.ra9)
+        url = reverse(URL + 'report')
+        self.assertContains(self.client.get(url), 'Create it')  # the tag doesn't exist yet
+        excluded = Tag.objects.create(name='Naming excluded', slug='naming-excluded')
+        page = self.client.get(url)
+        self.assertEqual(page.context['exclude_url'], reverse('dcim:device_bulk_edit'))
+        # NetBox's bulk edit page asks first, then adds the tag.
+        form = {'pk': [drifted.pk], 'add_tags': [excluded.pk], 'return_url': url}
+        self.assertContains(self.client.post(page.context['exclude_url'], form), 'old-1')
+        self.assertFalse(drifted.tags.exists())
+        self.client.post(page.context['exclude_url'], {**form, '_apply': '1'})
+        self.assertEqual(self.client.get(url).context['report'].counts['excluded'], 1)
 
     def test_rule_preview(self):
         named = self.device(rack=self.ra8)

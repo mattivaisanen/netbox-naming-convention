@@ -1,6 +1,9 @@
 {% load i18n helpers %}
 <div class="card">
   <h2 class="card-header">{% trans "Naming" %}</h2>
+  {% if excluded %}
+  <div class="card-body text-secondary">{% blocktrans %}Excluded from naming by the tag {{ excluded }}: no rule names, flags or refuses this name.{% endblocktrans %}</div>
+  {% else %}
   <table class="table table-hover attr-table">
     <tr><th scope="row">{% trans "Rule" %}</th><td>{% if perms.netbox_naming_convention.view_namingrule %}<a href="{{ rule.get_absolute_url }}">{{ rule }}</a>{% else %}{{ rule }}{% endif %}</td></tr>
     <tr>
@@ -24,4 +27,5 @@
     </tr>
     {% endif %}
   </table>
+  {% endif %}
 </div>
