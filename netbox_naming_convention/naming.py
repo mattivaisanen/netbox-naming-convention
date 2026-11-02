@@ -150,7 +150,9 @@ def render_name(obj, rule, waits=True):
     out.prefix = filter_name(rendered.prefix, filters)
     out.suffix = filter_name(rendered.suffix, filters)
     # Fields the rule waits for, in the rule's order, before the template's own.
-    waiting = [key for key in rule.required_values if key in kind.wait_for and not _has_value(obj, key)] if waits else []
+    waiting = [
+        key for key in rule.required_values if key in kind.wait_for and not _has_value(obj, key)
+    ] if waits else []
     out.missing = waiting + [m for m in rendered.missing if m not in waiting]
     pattern = filter_name(rendered.pattern, filters).replace(NUMBER, _counter_pattern(rule))
     out.pattern = _match_pattern(pattern, rule)

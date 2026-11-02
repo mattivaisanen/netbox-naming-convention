@@ -28,7 +28,8 @@ import logging
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
+from django.utils.translation import gettext as _
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 
 from netbox.context import current_request
 from netbox.signals import post_clean
@@ -36,8 +37,8 @@ from utilities.exceptions import AbortRequest
 
 from . import integrations, naming
 from .kinds import KINDS, kind_of
-from .matching import find_rule
-from .models import AssignedHowChoices, AssignedName, EnforcementChoices, ReservedName
+from .matching import find_rule, forget_rules
+from .models import AssignedHowChoices, AssignedName, EnforcementChoices, NamingRule, ReservedName
 
 logger = logging.getLogger('netbox_naming_convention')
 
@@ -123,8 +124,9 @@ def name_on_clean(sender, instance, **kwargs):
 
 
 def _waiting(rule, suggestion):
-    kind = rule.kind.label.lower()
-    return f'The rule "{rule}" names this {kind} once it has: {", ".join(suggestion.missing)}.'
+    return _('The rule "{rule}" names this {kind} once it has: {missing}.').format(
+        rule=rule, kind=rule.kind.label.lower(), missing=', '.join(suggestion.missing),
+    )
 
 
 def name_on_save(sender, instance, raw=False, **kwargs):
@@ -205,6 +207,14 @@ def connect():
         post_save.connect(record_on_save, sender=model, dispatch_uid=f'{uid}.post_save')
         pre_delete.connect(release_on_delete, sender=model, dispatch_uid=f'{uid}.pre_delete')
         post_delete.connect(forget_on_delete, sender=model, dispatch_uid=f'{uid}.post_delete')
+    # Rules are kept for the rest of a request (matching.kind_rules()): a
+    # changed rule must apply to the next object saved in that request.
+    uid = 'netbox_naming_convention.rule'
+    post_save.connect(forget_rules, sender=NamingRule, dispatch_uid=f'{uid}.post_save')
+    post_delete.connect(forget_rules, sender=NamingRule, dispatch_uid=f'{uid}.post_delete')
+    for name in NamingRule.CONDITION_FIELDS:
+        through = getattr(NamingRule, name).through
+        m2m_changed.connect(forget_rules, sender=through, dispatch_uid=f'{uid}.{name}')
 
 
 def _message(rule, how):

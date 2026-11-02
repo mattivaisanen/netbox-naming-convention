@@ -109,7 +109,7 @@
           <thead><tr>{% if can_unreserve %}<th></th>{% endif %}<th>{% trans "Name" %}</th><th>{% trans "Expires" %}</th><th>{% trans "Description" %}</th><th>{% trans "Reserved by" %}</th></tr></thead>
           <tbody>
           {% for r in reserved %}
-            <tr{% if r.expired %} class="text-muted"{% endif %}>
+            <tr{% if r.expired %} class="text-secondary"{% endif %}>
               {% if can_unreserve %}<td><input type="checkbox" class="form-check-input" name="pk" value="{{ r.pk }}" aria-label="{{ r.name }}"></td>{% endif %}
               <td class="font-monospace">{{ r.name }}</td>
               <td>{% if r.expires %}{{ r.expires|date:"Y-m-d" }}{% if r.expired %} ({% trans "expired" %}){% endif %}{% else %}{{ ''|placeholder }}{% endif %}</td>
@@ -126,7 +126,7 @@
         {% endif %}
       </form>
       {% else %}
-      <div class="card-body text-muted">{% blocktrans with kinds=kind.label_plural %}Reserve names for {{ kinds }} that don't exist in NetBox yet, for labels or an order. A reserved number is not given to anyone else; saving an object with the name uses it up.{% endblocktrans %}</div>
+      <div class="card-body text-secondary">{% blocktrans with kinds=kind.label_plural %}Reserve names for {{ kinds }} that don't exist in NetBox yet, for labels or an order. A reserved number is not given to anyone else; saving an object with the name uses it up.{% endblocktrans %}</div>
       {% endif %}
     </div>
     {% endif %}

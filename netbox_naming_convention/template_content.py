@@ -6,7 +6,7 @@ from django.urls import reverse
 from netbox.plugins import PluginTemplateExtension
 
 from .kinds import KINDS
-from .matching import exclude_tag, find_rule, is_excluded, rules_queryset
+from .matching import exclude_tag, find_rule, is_excluded, kind_rules
 from .models import AssignedName
 from .naming import number_in_name, follows, suggest
 from .settings import get_setting
@@ -62,7 +62,7 @@ class NameFormHelper(PluginTemplateExtension):
         kind, mode = FORM_VIEWS.get(match.view_name if match else None, (None, None))
         if kind is None:
             return ''
-        if not rules_queryset(kind).exists():
+        if not kind_rules(kind):
             return ''
         locked = mode == 'add'
         obj = None
@@ -96,7 +96,10 @@ class ChangeRequestNaming(PluginTemplateExtension):
 
     def alerts(self):
         change = self.context.get('object')
-        obj = requested_object(change)
+        request = self.context.get('request')
+        if request is None:
+            return ''
+        obj = requested_object(change, request.user)
         if obj is None or not obj.name:
             return ''
         assigned = AssignedName.lookup(obj, obj.name)
@@ -116,12 +119,12 @@ class ChangeRequestNaming(PluginTemplateExtension):
         })
 
 
-def requested_object(change):
+def requested_object(change, user):
     """
     The device, virtual machine or rack as a change request would leave it:
     a pending new object as it is, a pending update with its requested
-    values applied (in memory). None for anything else, or when the name
-    doesn't change.
+    values applied (in memory). None for anything else, when the name
+    doesn't change, or when `user` may not view the object.
     """
     if change is None:
         return None
@@ -131,7 +134,7 @@ def requested_object(change):
     if change.object_id is None or change.action not in ('create', 'update'):
         return None
     model = kind.model
-    obj = model.objects.filter(pk=change.object_id).first()
+    obj = model.objects.restrict(user, 'view').filter(pk=change.object_id).first()
     diff = change.diff if isinstance(change.diff, dict) else {}
     if obj is None or change.action == 'create':
         return obj
