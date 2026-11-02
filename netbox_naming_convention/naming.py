@@ -25,7 +25,6 @@ New names are suggested without extra text; an object being edited keeps
 its own.
 """
 import re
-from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import NamedTuple
 
@@ -622,38 +621,39 @@ def check_typed_name(obj, rule):
 # Names the plugin filled in during validation, to be picked again under the
 # lock at save time. The form path keeps the instance (instance._naming_auto);
 # the REST API validates a copy, so it remembers the name for the request.
+# Outside a request (scripts, background jobs) only the instance flag counts:
+# a list kept for the whole process would never be cleared, and a name typed
+# later that matches an old entry would be numbered again.
 #
-
-_auto_names = ContextVar('naming_auto_names', default=None)
 
 
 def _auto_set():
+    """The names filled in during the current request, or None outside one."""
     request = current_request.get()
-    if request is not None:
-        names = getattr(request, '_naming_auto_names', None)
-        if names is None:
-            names = set()
-            request._naming_auto_names = names
-        return names
-    names = _auto_names.get()
+    if request is None:
+        return None
+    names = getattr(request, '_naming_auto_names', None)
     if names is None:
-        names = set()
-        _auto_names.set(names)
+        names = request._naming_auto_names = set()
     return names
 
 
 def mark_auto(obj):
     obj._naming_auto = True
-    if obj.name:
-        _auto_set().add(obj.name)
+    names = _auto_set()
+    if obj.name and names is not None:
+        names.add(obj.name)
 
 
 def is_auto(obj):
     if getattr(obj, '_naming_auto', False):
         return True
-    return bool(obj.name) and obj._state.adding and obj.name in _auto_set()
+    names = _auto_set()
+    return bool(obj.name) and obj._state.adding and names is not None and obj.name in names
 
 
 def unmark_auto(obj):
     obj._naming_auto = False
-    _auto_set().discard(obj.name)
+    names = _auto_set()
+    if names is not None:
+        names.discard(obj.name)

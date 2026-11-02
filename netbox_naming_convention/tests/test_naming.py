@@ -355,6 +355,14 @@ class NamingTests(NetBoxData, TestCase):
         self.assertEqual(self.device(rack=self.ra9).name, 'NLUTSWI002_RA9')
 
 
+    def test_typed_name_is_kept_after_an_unsaved_suggestion(self):
+        # A script validates a device without saving it, then types that
+        # same name for another device later: the typed name stays.
+        self.device(rack=self.ra8, save=False).full_clean()
+        self.device(name='NLUTSWI005_RA8', rack=self.ra8)
+        self.assertEqual(self.device(name='NLUTSWI001_RA8', rack=self.ra8).name, 'NLUTSWI001_RA8')
+
+
 class LetterCounterTests(NetBoxData, TestCase):
     """{rack.name}{a-z}: the rack's name and one letter, a to z."""
     @classmethod

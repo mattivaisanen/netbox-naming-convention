@@ -12,6 +12,8 @@ Fixed:
   don't follow the rule; numbers are now kept apart, as on the rename page.
 - A number of an expired reservation, once taken by an object, came back
   again after that object was deleted, even with gap filling off.
+- In scripts and background jobs, a typed name that matched a name the
+  plugin had suggested earlier (but never saved) was given a new number.
 
 ## 0.5.0 (2026-11-02)
 
