@@ -6,6 +6,7 @@ Settings go in NetBox's `configuration.py`:
 PLUGINS_CONFIG = {
     'netbox_naming_convention': {
         'device_form': True,
+        'exclude_tag': 'naming-excluded',
     },
 }
 ```
@@ -13,6 +14,7 @@ PLUGINS_CONFIG = {
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `device_form` | bool | `True` | On the device, virtual machine and rack add forms, lock and gray out the name and fill it in from the matching rule, with a button to type a name instead; on the edit form, gray out a name that follows its rule and offer *Suggest again*. `False` leaves the forms as NetBox has them. Device names are still filled in on save either way; virtual machines and racks need a name on their forms then. |
+| `exclude_tag` | str | `'naming-excluded'` | Slug of the tag that leaves a device, virtual machine or rack out of naming (see *Excluding objects* in the README). The tag itself is created in NetBox as usual. Empty or `None` turns exclusion off. |
 
 Everything else is set per rule under **Naming → Naming Rules** (see the
 README).

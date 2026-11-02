@@ -7,6 +7,7 @@ from django.test import TestCase, TransactionTestCase
 
 from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
+from extras.models import Tag
 from ipam.models import IPAddress
 from utilities.exceptions import AbortRequest
 
@@ -203,6 +204,17 @@ class NamingTests(NetBoxData, TestCase):
         # Padded differently from the rule's 3 digits.
         with self.assertRaises(ValidationError):
             self.device(name='NLUTSWI0006_RA8', rack=self.ra8)
+
+    def test_excluded_devices_skip_the_rules(self):
+        excluded = Tag.objects.create(name='Naming excluded', slug='naming-excluded')
+        self.switches.enforcement = EnforcementChoices.REFUSE
+        self.switches.save()
+        # Any name is accepted, a missing one is not filled in, and nothing is flagged.
+        typed = self.device(name='my-switch', rack=self.ra8, tags=[excluded])
+        self.assertEqual(typed.name, 'my-switch')
+        self.assertEqual(follows(typed), (None, None))
+        self.assertIsNone(self.device(rack=self.ra8, tags=[excluded]).name)
+        self.assertEqual(self.device(rack=self.ra8).name, 'NLUTSWI001_RA8')
 
     def test_stack_members_share_a_number(self):
         self.switches.template = 'SW{n}'

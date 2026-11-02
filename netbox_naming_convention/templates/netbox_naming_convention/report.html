@@ -29,10 +29,21 @@
         <a href="?object_type={{ kind.key }}&show=no_rule" class="list-group-item list-group-item-action d-flex{% if show == 'no_rule' %} active{% endif %}">
           {% trans "No rule names it" %}<span class="ms-auto">{{ report.counts.no_rule }}</span>
         </a>
+        {% if exclude_tag %}
+        <a href="?object_type={{ kind.key }}&show=excluded" class="list-group-item list-group-item-action d-flex{% if show == 'excluded' %} active{% endif %}">
+          {% blocktrans %}Excluded (tag {{ exclude_tag }}){% endblocktrans %}<span class="ms-auto">{{ report.counts.excluded }}</span>
+        </a>
+        {% endif %}
         <a href="?object_type={{ kind.key }}&show=follows" class="list-group-item list-group-item-action d-flex{% if show == 'follows' %} active{% endif %}">
           {% trans "Follows its rule" %}<span class="ms-auto">{{ report.counts.follows }}</span>
         </a>
       </div>
+      {% if exclude_tag and not exclude_tag_obj %}
+      <div class="card-footer text-secondary">
+        {% blocktrans %}Objects are excluded from naming with the tag {{ exclude_tag }}, which doesn't exist yet.{% endblocktrans %}
+        {% if exclude_tag_add_url %}<a href="{{ exclude_tag_add_url }}">{% trans "Create it" %}</a>{% endif %}
+      </div>
+      {% endif %}
       {% if report.truncated %}<div class="card-footer text-secondary">{% blocktrans with kinds=kind.label_plural %}Only the first {{ limit }} {{ kinds }} are counted.{% endblocktrans %}</div>{% endif %}
     </div>
     <div class="card">
@@ -56,9 +67,17 @@
           {% csrf_token %}
           {% render_table table 'inc/table.html' %}
           {% if report.shown|length >= shown_limit %}<div class="card-footer text-secondary">{% blocktrans with kinds=kind.label_plural %}The first {{ shown_limit }} {{ kinds }} are listed.{% endblocktrans %}</div>{% endif %}
-          {% if can_rename %}
+          {% if can_rename or exclude_url %}
           <div class="card-footer text-end">
+            {% if exclude_url %}
+            {# Sent to NetBox's bulk edit page, which asks before it adds the tag. #}
+            <input type="hidden" name="add_tags" value="{{ exclude_tag_obj.pk }}">
+            <input type="hidden" name="return_url" value="{{ report_url }}">
+            <button type="submit" formaction="{{ exclude_url }}" class="btn btn-sm btn-outline-secondary"><i class="mdi mdi-tag-off-outline"></i> {% trans "Exclude selected from naming" %}</button>
+            {% endif %}
+            {% if can_rename %}
             <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-rename-outline"></i> {% trans "Rename selected to the suggested names" %}</button>
+            {% endif %}
           </div>
           {% endif %}
         </form>

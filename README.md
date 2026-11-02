@@ -52,6 +52,8 @@ Everything below works the same for devices, virtual machines and racks;
 - **Enforcement per rule:** off (only suggest and fill in), warn (names that
   don't fit are flagged on the device and listed on the rule), or refuse (a
   new device or a rename must follow the rule, and may not reuse a number).
+- **Exclusions.** Objects tagged `naming-excluded` are left out of every
+  rule, see *Excluding objects*.
 - **Preview while you write a rule.** The rule form shows the names the
   rule would give its devices, and to any device you pick, as you type.
 - **Rule pages** show each series with its highest number and the next name,
@@ -61,7 +63,7 @@ Everything below works the same for devices, virtual machines and racks;
   so permissions, the change log and approvals work as for any bulk edit.
 - **Naming report** (*Naming → Naming Report*): for devices, virtual
   machines and racks, how many have a name that doesn't follow their rule,
-  have no name yet, aren't named by any rule, or follow their rule, with a
+  have no name yet, aren't named by any rule, are excluded, or follow their rule, with a
   count per rule. Each group lists its objects (the first 100) with the
   rule and the suggested name, and the same *Rename selected* as on a rule
   page, here with each object renamed by its own rule. Only objects you may
@@ -151,6 +153,33 @@ name. Set different priorities when you want a fixed order.
 
 The rule form shows only the number fields that apply to the number source
 you pick.
+
+### Excluding objects
+
+Some objects keep a name of their own, such as legacy gear or a vendor
+appliance. Give them the tag `naming-excluded` (create it under
+*Customization → Tags*; the slug is set with `exclude_tag`, see
+[docs/configuration.md](docs/configuration.md)). A tagged device, virtual
+machine or rack is left out of every rule:
+
+- any name is accepted, also under *Refuse*, and a missing name is not
+  filled in;
+- it is not flagged or listed as not following a rule, and is not renamed
+  from a rule page or the report;
+- its page says it is excluded, and the add form unlocks the name as soon
+  as the tag is picked.
+
+On the naming report, tick objects and press *Exclude selected from
+naming*: NetBox's own bulk edit page opens with the tag filled in under
+*Add tags*, and nothing changes until you apply it there. It needs
+permission to change those objects, and with netbox-change-approval the
+change waits for approval. When the tag doesn't exist yet, the report links
+to creating it.
+
+An excluded object's name still counts when numbers are handed out, so a
+number it holds is not given to another object. The naming report lists
+excluded objects in a group of their own. The tag can also be set in bulk
+edit, CSV import and the REST API.
 
 ### Reserving names
 

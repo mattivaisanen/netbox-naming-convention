@@ -28,6 +28,9 @@ class NamingConventionConfig(PluginConfig):
         # instead. False leaves the forms as NetBox has them (device names are
         # still filled in on save).
         'device_form': True,
+        # Objects with this tag are left out of naming: no rule names,
+        # flags or refuses them. Empty or None turns exclusion off.
+        'exclude_tag': 'naming-excluded',
     }
 
     menu = 'navigation.menu'

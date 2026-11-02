@@ -6,7 +6,7 @@ from django.urls import reverse
 from netbox.plugins import PluginTemplateExtension
 
 from .kinds import KINDS
-from .matching import find_rule, rules_queryset
+from .matching import exclude_tag, find_rule, is_excluded, rules_queryset
 from .models import AssignedName
 from .naming import number_in_name, follows, suggest
 from .settings import get_setting
@@ -24,6 +24,10 @@ class NamingPanel(PluginTemplateExtension):
 
     def right_page(self):
         obj = self.context['object']
+        if is_excluded(obj):
+            return self.render('netbox_naming_convention/inc/naming_panel.html', extra_context={
+                'excluded': exclude_tag(),
+            })
         rule = find_rule(obj)
         if rule is None:
             return ''

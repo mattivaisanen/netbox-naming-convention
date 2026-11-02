@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+New:
+
+- Exclusions: devices, virtual machines and racks tagged
+  `naming-excluded` (setting `exclude_tag`) are left out of every rule.
+  Any name is accepted, nothing is filled in or flagged, and the naming
+  report lists them in their own group, with *Exclude selected from
+  naming* (through NetBox's bulk edit, so permissions and approvals apply).
+  No migration.
+
 ## 0.4.0 (2026-11-01)
 
 New:

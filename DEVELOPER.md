@@ -59,6 +59,13 @@ most first, then name. Sorted in Python because specificity counts
 prefetched relations. Every caller of `find_rule()` and the rule page use
 this order.
 
+An object with the exclusion tag (setting `exclude_tag`) has no rule:
+`find_rule()` returns None for it and `rule_objects()` skips it, so every
+hook, panel and list treats it like an object no rule names. Its name is
+still read when numbers are counted, so a number it holds is never handed
+out again. The report and the rename page check `is_excluded()` first to
+tell it apart from an object no rule matches.
+
 ## Matching a device that has no row yet
 
 A device being created has no primary key, so rules are matched on the
@@ -247,7 +254,7 @@ preview like on the rename page.
 `report.build_report()` goes through the objects of one kind the user may
 view (at most `REPORT_LIMIT`), finds each one's rule with the rules loaded
 once (`find_rule(obj, rules, tag_slugs)`, tags prefetched) and puts it in a
-group: `drifted`, `unnamed`, `no_rule` or `follows`. Only the objects of
+group: `drifted`, `unnamed`, `no_rule`, `excluded` or `follows`. Only the objects of
 the group shown get a suggestion (at most `REPORT_SHOWN`, numbers kept
 distinct like on the rename page).
 
