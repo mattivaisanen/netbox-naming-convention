@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 (2026-11-02)
+
+Changed:
+
+- Faster bulk saves and pages: the rules are loaded once per request
+  instead of a few times per object, and parsed templates are kept.
+- The netbox-change-approval note on a change request only reads objects
+  the viewer may view.
+- Code tidy-up: `object_from_values()` moved to `values.py`, unused code
+  removed, "waiting" errors are translatable.
 
 Fixed:
 

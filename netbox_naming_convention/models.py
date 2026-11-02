@@ -34,7 +34,7 @@ from utilities.querysets import RestrictedQuerySet
 
 from .kinds import DEVICE, KINDS, ObjectTypeChoices
 from .numbering import LETTERS, MAX_DIGITS, NumberError, letter, parse_ip_pattern, parse_skip
-from .template import Template, TemplateError, parse_name_filters
+from .template import Template, TemplateError, parse_name_filters, parse_template
 
 __all__ = (
     'AssignedName', 'AssignedHowChoices', 'EnforcementChoices', 'NameMatchChoices', 'NamingRule',
@@ -358,7 +358,7 @@ class NamingRule(NetBoxModel):
 
     @property
     def parsed_template(self):
-        return Template(self.template, self.kind)
+        return parse_template(self.template, self.kind.key)
 
     #: Every condition field of any kind (each kind uses some, see kinds.py).
     CONDITION_FIELDS = (

@@ -18,13 +18,15 @@ names them, so nothing is filled in, flagged or refused.
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Manager
 
+from netbox.context import current_request
+
 from .kinds import DEVICE, kind_of, prepare
 from .models import NamingRule, TagMatchChoices
 from .settings import get_setting
 
 __all__ = (
     'find_rule', 'rule_matches', 'object_tag_slugs', 'rules_queryset', 'ordered_rules', 'rule_objects',
-    'related_object', 'exclude_tag', 'is_excluded',
+    'related_object', 'exclude_tag', 'is_excluded', 'kind_rules', 'forget_rules',
 )
 
 _LOOKUPS = {
@@ -49,6 +51,31 @@ def ordered_rules(rules=None):
     """
     rules = list(rules if rules is not None else rules_queryset())
     return sorted(rules, key=lambda rule: (rule.priority, -rule.specificity, rule.name))
+
+
+def kind_rules(kind):
+    """
+    The enabled rules of `kind` in the order they are tried. Kept for the
+    rest of the current request, so a CSV import or bulk edit of many
+    objects loads the rules once instead of a few times per object. Saving
+    or deleting a rule clears the cache (forget_rules()).
+    """
+    request = current_request.get()
+    if request is None:
+        return ordered_rules(rules_queryset(kind))
+    cache = getattr(request, '_naming_rules', None)
+    if cache is None:
+        cache = request._naming_rules = {}
+    if kind.key not in cache:
+        cache[kind.key] = ordered_rules(rules_queryset(kind))
+    return cache[kind.key]
+
+
+def forget_rules(**kwargs):
+    """Clear the rules kept for the current request (connected to rule changes in signals.py)."""
+    request = current_request.get()
+    if request is not None:
+        request._naming_rules = None
 
 
 def _with_ancestors(obj):
@@ -341,7 +368,7 @@ def find_rule(obj, rules=None, tag_slugs=None):
         if is_excluded(obj, tag_slugs):
             return None
     prepare(obj)
-    for rule in ordered_rules(rules if rules is not None else rules_queryset(kind)):
+    for rule in ordered_rules(rules) if rules is not None else kind_rules(kind):
         if rule.kind is not kind:
             continue
         if rule.match_tags.all() and tag_slugs is None:

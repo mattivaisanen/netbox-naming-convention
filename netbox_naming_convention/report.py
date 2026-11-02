@@ -14,7 +14,7 @@ The report reads only; renaming goes through the rename page like on a rule.
 """
 from dataclasses import dataclass, field
 
-from .matching import find_rule, is_excluded, ordered_rules, rules_queryset
+from .matching import find_rule, is_excluded, kind_rules
 from .naming import follows, suggest
 
 #: Most objects the report looks at.
@@ -71,7 +71,7 @@ def group_of(obj, rules):
 def build_report(kind, objects, show='drifted'):
     """The report for `objects` (a queryset of `kind`), listing the group `show`."""
     report = Report(kind)
-    rules = ordered_rules(rules_queryset(kind))
+    rules = kind_rules(kind)
     per_rule = {rule.pk: RuleCount(rule) for rule in rules}
     objects = objects.select_related(*related_fields(kind)).prefetch_related('tags').order_by('name', 'pk')
     taken = {}

@@ -1,15 +1,18 @@
 """Naming devices on save: numbers, series, enforcement, editing."""
 import datetime
 import threading
+import uuid
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
-from django.test import TestCase, TransactionTestCase
+from django.test import RequestFactory, TestCase, TransactionTestCase
 
 from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
 from extras.models import Tag
 from ipam.models import IPAddress
+from netbox.context_managers import event_tracking
 from utilities.exceptions import AbortRequest
 
 from ..models import (
@@ -28,6 +31,18 @@ class NamingTests(NetBoxData, TestCase):
     def test_new_device_gets_the_rules_name(self):
         self.assertEqual(self.device(rack=self.ra8).name, 'NLUTSWI001_RA8')
         self.assertEqual(self.device(rack=self.ra9).name, 'NLUTSWI002_RA9')
+
+    def test_rules_kept_per_request_until_a_rule_changes(self):
+        # A CSV import saves many devices in one request: rules load once,
+        # and a rule changed in the same request applies at once.
+        request = RequestFactory().post('/')
+        request.id = uuid.uuid4()
+        request.user = get_user_model().objects.create_user(username='importer')
+        with event_tracking(request):
+            self.assertEqual(self.device(rack=self.ra8).name, 'NLUTSWI001_RA8')
+            self.switches.template = 'SW{n}'
+            self.switches.save()
+            self.assertEqual(self.device(rack=self.ra8).name, 'SW001')
 
     def test_more_specific_rule_wins_on_equal_priority(self):
         # Named so it sorts before the tagged rule: the name must not decide.
