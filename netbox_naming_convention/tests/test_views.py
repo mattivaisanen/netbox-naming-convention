@@ -36,6 +36,11 @@ class ViewTests(NetBoxData, TestCase):
         self.assertEqual(self.client.get(reverse(URL + 'namingrule_list')).status_code, 200)
         page = self.client.get(self.switches.get_absolute_url())
         self.assertContains(page, 'NLUTSWI002_RA8')  # next name of the series
+        # With gap filling the listed object's own number is still in use.
+        self.switches.fill_gaps = True
+        self.switches.save()
+        page = self.client.get(self.switches.get_absolute_url())
+        self.assertEqual(page.context['series'][0]['next'], 'NLUTSWI002_RA8')
         self.assertContains(page, 'old-switch')  # does not follow the rule
         self.assertEqual(self.client.get(reverse(URL + 'namingrule_add')).status_code, 200)
 

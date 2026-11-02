@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Fixed:
+
+- A reserved name of a rule without `{n}` was filled in for the next new
+  object. It is now kept for whoever types it in.
+- The rule page showed a listed object's own number as the next name when
+  gap filling was on (or the series had no history yet).
+- The rule page could suggest the same new name for several objects that
+  don't follow the rule; numbers are now kept apart, as on the rename page.
+- A number of an expired reservation, once taken by an object, came back
+  again after that object was deleted, even with gap filling off.
+
 ## 0.5.0 (2026-11-02)
 
 New:

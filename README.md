@@ -195,8 +195,9 @@ not the API, not a name typed under *Refuse*. Saving an object with the
 reserved name (type it into the name field) uses the reservation up. A
 reservation that expires or is freed was never used, so its number goes
 back to the series and is handed out again first, even with gap filling
-off (like the number of a device that was never approved). Rules that
-read the number from the IP can't reserve names.
+off (like the number of a device that was never approved). A rule
+without `{n}` has one name: while it is reserved, it is not filled in for
+anyone. Rules that read the number from the IP can't reserve names.
 
 ### Preview
 

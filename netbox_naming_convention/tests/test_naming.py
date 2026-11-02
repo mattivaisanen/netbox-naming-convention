@@ -1,4 +1,5 @@
 """Naming devices on save: numbers, series, enforcement, editing."""
+import datetime
 import threading
 
 from django.core.exceptions import ValidationError
@@ -11,8 +12,10 @@ from extras.models import Tag
 from ipam.models import IPAddress
 from utilities.exceptions import AbortRequest
 
-from ..models import EnforcementChoices, NameMatchChoices, NamingRule, NamingSeries, NumberScopeChoices, NumberSourceChoices
-from ..naming import follows, suggest
+from ..models import (
+    EnforcementChoices, NameMatchChoices, NamingRule, NamingSeries, NumberScopeChoices, NumberSourceChoices, ReservedName,
+)
+from ..naming import follows, reserve, suggest
 from .utils import NetBoxData
 
 
@@ -331,6 +334,25 @@ class NamingTests(NetBoxData, TestCase):
         device = Device(site=self.utrecht, role=self.access, device_type=self.c9300, rack=self.ra8)
         device.save()
         self.assertEqual(device.name, 'NLUTSWI001_RA8')
+
+
+    def test_reserved_fixed_name_is_not_filled_in(self):
+        router = self.rule(roles=[self.router], name='Router', template='NL{site.name|first:2|upper}-RTR')
+        reserve(self.device(role=self.router, save=False), router)
+        with self.assertRaises(ValidationError):
+            self.device(role=self.router)
+        # Typing the reserved name uses the reservation.
+        self.assertEqual(self.device(name='NLUT-RTR', role=self.router).name, 'NLUT-RTR')
+        self.assertFalse(ReservedName.objects.exists())
+
+    def test_number_of_an_expired_reservation_is_used_up_once(self):
+        reserve(self.device(rack=self.ra8, save=False), self.switches, expires=datetime.date(2000, 1, 1))
+        # Another rack, same series: the expired number goes out again, once.
+        device = self.device(rack=self.ra9)
+        self.assertEqual(device.name, 'NLUTSWI001_RA9')
+        self.assertFalse(ReservedName.objects.exists())
+        device.delete()
+        self.assertEqual(self.device(rack=self.ra9).name, 'NLUTSWI002_RA9')
 
 
 class LetterCounterTests(NetBoxData, TestCase):
