@@ -39,8 +39,9 @@ that, the lock would drop the moment the empty form found no rule.
 | `kinds.py` | Devices, virtual machines and racks: what differs between them (see above). |
 | `template.py` | Parses a template into text, value and number parts; renders it for an object; lists missing values. Unknown values and filters are refused when a rule is saved. No database. |
 | `numbering.py` | Series keys, the regular expression that reads a number back out of a name, used numbers (from names in the database), the next number, numbers from an IP. |
-| `matching.py` | Which rule names an object (in memory, see below), and `rule_objects()` for the rule page and the preview. |
+| `matching.py` | Which rule names an object (in memory, see below), and `rule_objects()` for the rule page and the preview. `kind_rules()` keeps the enabled rules for the rest of a request; saving or deleting a rule clears them. |
 | `naming.py` | `suggest()` (no writes), `assign()` and `reserve()` (under the series lock), `remember()`, `follows()`, `check_typed_name()`. |
+| `values.py` | `object_from_values()`: an unsaved object built from form or API values (only related objects the user may view), for suggesting and reserving names. |
 | `signals.py` | The save hooks, connected for each kind's model by `signals.connect()` in `ready()`. |
 | `api/patches.py` | The wrapped NetBox serializers (see below). |
 | `template_content.py`, `templates/.../inc/name_form.html` | The naming panel, the name field script on the add and edit forms, and the note on netbox-change-approval's change request page. |

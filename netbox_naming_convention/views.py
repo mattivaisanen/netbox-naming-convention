@@ -1,6 +1,8 @@
+import copy
 import csv
 import io
 from collections import OrderedDict
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -10,19 +12,19 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views import View
 
-from netbox.views import generic
 from extras.models import Tag
+from netbox.views import generic
 from utilities.views import get_viewname, register_model_view
 
 from . import filtersets, forms, preview, reference, tables
 from .kinds import KINDS
 from .matching import (
-    exclude_tag, find_rule, is_excluded, object_tag_slugs, ordered_rules, rule_objects, rules_queryset,
+    exclude_tag, find_rule, is_excluded, kind_rules, object_tag_slugs, rule_objects,
 )
-from .api.views import object_from_values
-from .models import NamingRule, NamingSeries, ReservedName
+from .models import NamingRule, NamingSeries
 from .naming import follows, free_reservations, number_in_name, render_name, reserve, suggest
 from .report import GROUPS, REPORT_LIMIT, REPORT_SHOWN, build_report, related_fields
+from .values import object_from_values
 
 #: Most objects a rule page looks at.
 RULE_PAGE_LIMIT = 2000
@@ -64,15 +66,19 @@ def rule_overview(rule, user):
         if not fits:
             drifted.append(obj)
     # A suggestion costs a few queries: only for the objects the page lists.
+    # Numbers suggested earlier on the page count as taken, as when renaming.
+    taken = {}
     for obj in drifted[:DRIFTED_SHOWN]:
-        hint = suggest(obj, rule)
+        hint = suggest(obj, rule, taken=taken)
         obj.suggested_name = hint.name if hint.ready else None
+        if hint.ready and hint.number is not None:
+            taken.setdefault(hint.series, set()).add(hint.number)
     stored = dict(NamingSeries.objects.filter(key__in=list(series)).values_list('key', 'high_water'))
     for entry in series.values():
         entry['high_water'] = stored.get(entry['key'], 0)
         if entry['highest'] is not None:
             entry['highest_text'] = rule.format_number(entry['highest'])
-        hint = suggest(entry['example'], rule, keep_current=False)
+        hint = suggest(_new_like(entry['example']), rule, keep_current=False)
         entry['next'] = hint.name if hint.ready else hint.error
     return {
         'object_count': len(objects),
@@ -80,6 +86,20 @@ def rule_overview(rule, user):
         'series': list(series.values()),
         'drifted': drifted,
     }
+
+
+def _new_like(obj):
+    """
+    A new, unsaved object with `obj`'s values: what the next object of its
+    series is named. `obj` itself must not be left out of the numbers in use.
+    """
+    new = copy.copy(obj)
+    new._state = copy.copy(obj._state)
+    new._state.fields_cache = dict(obj._state.fields_cache)
+    new._state.adding = True
+    new.pk = None
+    new.name = None
+    return new
 
 
 @register_model_view(NamingRule)
@@ -171,7 +191,7 @@ def rename_plan(kind, objects, rule=None):
     renamed; without, each object goes by its own rule.
     """
     rows, skipped, taken = [], [], {}
-    rules = ordered_rules(rules_queryset(kind))  # once, not per object
+    rules = kind_rules(kind)  # once, not per object
     for obj in objects:
         slugs = object_tag_slugs(obj)
         if is_excluded(obj, slugs):
@@ -261,7 +281,7 @@ def exclude_context(request, kind, can_change):
     context = {'exclude_tag': slug, 'exclude_tag_obj': tag}
     if tag is None:
         if request.user.has_perm('extras.add_tag'):
-            context['exclude_tag_add_url'] = f"{reverse('extras:tag_add')}?slug={slug}&name={slug}"
+            context['exclude_tag_add_url'] = f"{reverse('extras:tag_add')}?{urlencode({'slug': slug, 'name': slug})}"
         return context
     if can_change:
         context['exclude_url'] = reverse(get_viewname(kind.model, 'bulk_edit'))

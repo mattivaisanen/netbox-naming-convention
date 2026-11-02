@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.1 (2026-11-02)
+
+Changed:
+
+- Faster bulk saves and pages: the rules are loaded once per request
+  instead of a few times per object, and parsed templates are kept.
+- The netbox-change-approval note on a change request only reads objects
+  the viewer may view.
+- Code tidy-up: `object_from_values()` moved to `values.py`, unused code
+  removed, "waiting" errors are translatable.
+
+Fixed:
+
+- A reserved name of a rule without `{n}` was filled in for the next new
+  object. It is now kept for whoever types it in.
+- The rule page showed a listed object's own number as the next name when
+  gap filling was on (or the series had no history yet).
+- The rule page could suggest the same new name for several objects that
+  don't follow the rule; numbers are now kept apart, as on the rename page.
+- A number of an expired reservation, once taken by an object, came back
+  again after that object was deleted, even with gap filling off.
+- In scripts and background jobs, a typed name that matched a name the
+  plugin had suggested earlier (but never saved) was given a new number.
+
 ## 0.5.0 (2026-11-02)
 
 New:

@@ -25,12 +25,13 @@ for: rack"), unless the part has ``|optional`` (left out) or ``|default:X``.
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from functools import lru_cache
 
-from .kinds import DEVICE
+from .kinds import DEVICE, KINDS
 
 __all__ = (
     'Template', 'TemplateError', 'Rendered', 'ATTRIBUTES', 'FILTERS', 'NUMBER', 'COUNTERS', 'NAME_FILTERS',
-    'parse_name_filters', 'filter_name',
+    'parse_name_filters', 'filter_name', 'parse_template',
 )
 
 
@@ -106,10 +107,6 @@ class Rendered:
     #: The name with NUMBER where the number goes and <rack> for a missing
     #: value: what the rule makes of this device, for messages.
     pattern: str = ''
-
-    @property
-    def ready(self):
-        return not self.missing
 
     def name(self, number_text=''):
         return self.prefix + number_text + self.suffix if self.has_number else self.prefix
@@ -296,10 +293,6 @@ class Template:
         """How the number is written: 'digits', 'lower' or 'upper' ('' without a number)."""
         return next((p.text for p in self.parts if p.kind == 'number'), '')
 
-    @property
-    def paths(self):
-        return [p.path for p in self.parts if p.kind == 'value']
-
     def render(self, resolve):
         """
         Fill the template in. `resolve(path)` returns the value of a path
@@ -328,3 +321,14 @@ class Template:
             else:
                 out.suffix += value
         return out
+
+
+@lru_cache(maxsize=256)
+def parse_template(text, kind_key):
+    """
+    The parsed Template for a rule's template text and object type, kept
+    between calls: pages and bulk saves read a rule's template once per
+    object. Templates are never changed after parsing, so sharing is safe.
+    Raises TemplateError like Template() (errors are not kept).
+    """
+    return Template(text, KINDS.get(kind_key, DEVICE))

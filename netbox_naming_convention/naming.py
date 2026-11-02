@@ -25,7 +25,6 @@ New names are suggested without extra text; an object being edited keeps
 its own.
 """
 import re
-from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import NamedTuple
 
@@ -150,7 +149,9 @@ def render_name(obj, rule, waits=True):
     out.prefix = filter_name(rendered.prefix, filters)
     out.suffix = filter_name(rendered.suffix, filters)
     # Fields the rule waits for, in the rule's order, before the template's own.
-    waiting = [key for key in rule.required_values if key in kind.wait_for and not _has_value(obj, key)] if waits else []
+    waiting = [
+        key for key in rule.required_values if key in kind.wait_for and not _has_value(obj, key)
+    ] if waits else []
     out.missing = waiting + [m for m in rendered.missing if m not in waiting]
     pattern = filter_name(rendered.pattern, filters).replace(NUMBER, _counter_pattern(rule))
     out.pattern = _match_pattern(pattern, rule)
@@ -256,7 +257,9 @@ def _pick(out, rule, obj, series, keep_current, taken=None):
         out.prefix, out.suffix, scope, rule.kind.model, exclude_pk=obj.pk, member_suffix=rule.member_suffix,
         letters=rule.letters, match=rule.name_match,
     )
-    used = set(used) | _reserved(out.series, obj.name)
+    # An object may use the reservation of its own name, but only a name it
+    # has: a new name (keep_current off) never takes a reserved number.
+    used = set(used) | _reserved(out.series, obj.name if keep_current else None)
     if taken:
         used = set(used) | taken.get(out.series, set())
     if rule.number_source == NumberSourceChoices.IP:
@@ -325,11 +328,26 @@ def suggest(obj, rule=None, *, keep_current=True, taken=None):
     if out.error or out.missing:
         return out
     if not has_number:
-        out.error = _too_long(out.prefix, rule)
-        out.name = None if out.error else out.prefix
+        name = out.prefix
+        out.error = _too_long(name, rule) or _fixed_reserved(obj, rule, name, keep_current)
+        out.name = None if out.error else name
         return out
     series = NamingSeries.objects.filter(key=out.series).first()
     return _pick(out, rule, obj, series, keep_current, taken)
+
+
+def _fixed_reserved(obj, rule, name, keep_current):
+    """
+    An error when the one name of a rule without {n} is reserved: it is not
+    filled in for anyone. An object that has the name (or gets it typed in)
+    uses the reservation.
+    """
+    if keep_current and (obj.name or '').lower() == name.lower():
+        return None
+    reserved = ReservedName.objects.active().filter(object_type=rule.kind.key, name__iexact=name)
+    if not reserved.exists():
+        return None
+    return _('The name {name} is reserved. Type it in to use the reservation.').format(name=name)
 
 
 def assign(obj, rule=None):
@@ -349,7 +367,7 @@ def assign(obj, rule=None):
     if out.error or out.missing:
         return out
     if not has_number:
-        out = suggest(obj, rule)
+        out = suggest(obj, rule, keep_current=False)
         if out.ready:
             obj.name = out.name
         return out
@@ -363,8 +381,16 @@ def assign(obj, rule=None):
     return out
 
 
-def _take(series, number):
-    """Remember `number` as handed out (`series` is locked)."""
+def _take(series, number, *, used=True):
+    """
+    Remember `number` as handed out (`series` is locked). When an object
+    takes it (`used`), an expired reservation of the number is used up too,
+    or it would give the number back again once the object is deleted.
+    """
+    if used:
+        ReservedName.objects.filter(series=series.key, number=number).exclude(
+            pk__in=ReservedName.objects.active(),
+        ).delete()
     if number > series.high_water or number in series.released:
         series.high_water = max(series.high_water, number)
         series.released = [n for n in series.released if n != number]
@@ -433,7 +459,7 @@ def reserve(obj, rule, count=1, *, expires=None, description='', user=None):
             ReservedName(name=hint.name, series=out.series, number=hint.number, **fields) for hint in picked
         ])
         for hint in picked:
-            _take(series, hint.number)
+            _take(series, hint.number, used=False)
     return reservations, None
 
 
@@ -597,38 +623,39 @@ def check_typed_name(obj, rule):
 # Names the plugin filled in during validation, to be picked again under the
 # lock at save time. The form path keeps the instance (instance._naming_auto);
 # the REST API validates a copy, so it remembers the name for the request.
+# Outside a request (scripts, background jobs) only the instance flag counts:
+# a list kept for the whole process would never be cleared, and a name typed
+# later that matches an old entry would be numbered again.
 #
-
-_auto_names = ContextVar('naming_auto_names', default=None)
 
 
 def _auto_set():
+    """The names filled in during the current request, or None outside one."""
     request = current_request.get()
-    if request is not None:
-        names = getattr(request, '_naming_auto_names', None)
-        if names is None:
-            names = set()
-            request._naming_auto_names = names
-        return names
-    names = _auto_names.get()
+    if request is None:
+        return None
+    names = getattr(request, '_naming_auto_names', None)
     if names is None:
-        names = set()
-        _auto_names.set(names)
+        names = request._naming_auto_names = set()
     return names
 
 
 def mark_auto(obj):
     obj._naming_auto = True
-    if obj.name:
-        _auto_set().add(obj.name)
+    names = _auto_set()
+    if obj.name and names is not None:
+        names.add(obj.name)
 
 
 def is_auto(obj):
     if getattr(obj, '_naming_auto', False):
         return True
-    return bool(obj.name) and obj._state.adding and obj.name in _auto_set()
+    names = _auto_set()
+    return bool(obj.name) and obj._state.adding and names is not None and obj.name in names
 
 
 def unmark_auto(obj):
     obj._naming_auto = False
-    _auto_set().discard(obj.name)
+    names = _auto_set()
+    if names is not None:
+        names.discard(obj.name)
