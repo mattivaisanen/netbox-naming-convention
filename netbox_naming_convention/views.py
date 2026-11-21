@@ -5,7 +5,6 @@ from collections import OrderedDict
 from urllib.parse import urlencode
 
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -14,7 +13,7 @@ from django.views import View
 
 from extras.models import Tag
 from netbox.views import generic
-from utilities.views import get_viewname, register_model_view
+from utilities.views import ConditionalLoginRequiredMixin, get_viewname, register_model_view
 
 from . import filtersets, forms, preview, reference, tables
 from .kinds import KINDS
@@ -144,7 +143,7 @@ class NamingRuleBulkDeleteView(generic.BulkDeleteView):
 
 
 @register_model_view(NamingRule, 'preview', path='preview', detail=False)
-class NamingRulePreviewView(LoginRequiredMixin, View):
+class NamingRulePreviewView(ConditionalLoginRequiredMixin, View):
     """
     The rule form posts itself here whenever it changes; the answer is the
     preview below *Try on* (see preview.py). Saves nothing.
@@ -169,7 +168,7 @@ def _kind_from(request):
     return KINDS.get(request.GET.get('object_type')) or KINDS['device']
 
 
-class TemplateReferenceView(LoginRequiredMixin, View):
+class TemplateReferenceView(ConditionalLoginRequiredMixin, View):
     """Everything a template can use, per object type (?object_type=). Linked from the rule form."""
     def get(self, request):
         kind = _kind_from(request)
@@ -240,14 +239,14 @@ def render_rename(request, kind, back_url, rule=None):
 
 
 @register_model_view(NamingRule, 'rename', path='rename')
-class NamingRuleRenameView(LoginRequiredMixin, View):
+class NamingRuleRenameView(ConditionalLoginRequiredMixin, View):
     """Rename objects of a rule that don't follow it (from the rule page)."""
     def post(self, request, pk):
         rule = get_object_or_404(NamingRule.objects.restrict(request.user, 'view'), pk=pk)
         return render_rename(request, rule.kind, rule.get_absolute_url(), rule)
 
 
-class NamingReportView(LoginRequiredMixin, View):
+class NamingReportView(ConditionalLoginRequiredMixin, View):
     """
     The naming report (report.py) for one kind (?object_type=), listing one
     group (?show=). Only objects the user may view are counted.
@@ -289,7 +288,7 @@ def exclude_context(request, kind, can_change):
     return context
 
 
-class NamingReportRenameView(LoginRequiredMixin, View):
+class NamingReportRenameView(ConditionalLoginRequiredMixin, View):
     """Rename objects ticked on the report, each by its own rule."""
     def post(self, request):
         kind = _kind_from(request)
@@ -298,7 +297,7 @@ class NamingReportRenameView(LoginRequiredMixin, View):
 
 
 @register_model_view(NamingRule, 'reserve', path='reserve')
-class NamingRuleReserveView(LoginRequiredMixin, View):
+class NamingRuleReserveView(ConditionalLoginRequiredMixin, View):
     """Reserve the next names of a rule (from the rule page)."""
     template_name = 'netbox_naming_convention/reserve.html'
 
@@ -330,7 +329,7 @@ class NamingRuleReserveView(LoginRequiredMixin, View):
 
 
 @register_model_view(NamingRule, 'unreserve', path='unreserve')
-class NamingRuleUnreserveView(LoginRequiredMixin, View):
+class NamingRuleUnreserveView(ConditionalLoginRequiredMixin, View):
     """Free the reserved names ticked on the rule page."""
     def post(self, request, pk):
         rule = get_object_or_404(NamingRule.objects.restrict(request.user, 'view'), pk=pk)

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.2 (2026-11-21)
+
+New:
+
+- `prepare_naming_uninstall` management command and an *Uninstalling*
+  section in the README.
+
+Fixed:
+
+- Deleting the last value of a rule's condition (its only site, region,
+  location, tag, ...) made the rule match everything of its kind. The rule
+  is now disabled, with a change log message saying why.
+- *Refuse* only applied to saves that went through validation. Names saved
+  without it (NetBox's bulk rename, scripts, plugins that write in bulk) are
+  now checked too.
+- The reservation expiry date on the rule page follows the user's date
+  format.
+
+Changed:
+
+- The plugin's own views follow NetBox's `LOGIN_REQUIRED` setting.
+- CI tests against netbox-change-approval 0.5.4.
+
 ## 0.5.1 (2026-11-02)
 
 Changed:

@@ -12,7 +12,9 @@ see kinds.py). "Device" below stands for any of them.
   save's transaction, and remembered as handed out. Also catches code that
   saves without validating (scripts, NetBox setting a primary IP), so a
   device without a name is named as soon as its rule has what it needs.
-  The change log entry's message says the name came from the rule.
+  The change log entry's message says the name came from the rule. A name
+  that didn't go through validation (NetBox's bulk rename, scripts, plugins
+  that write in bulk) is checked here against a rule that refuses names.
 - post_save: remembers which names a rule gave (AssignedName), for the
   device page and change requests, and uses up a reservation of the name
   (ReservedName). post_delete forgets the names a rule gave.
@@ -20,6 +22,10 @@ see kinds.py). "Device" below stands for any of them.
   netbox-change-approval is still open (rejected, withdrawn, sent back,
   expired) was never approved, so its number is given back to the series.
   Without that plugin nothing happens here.
+- Deleting a value a rule lists (a site, role, tag, ...): when it was the last
+  value of that condition, the rule is disabled. An empty condition means
+  "any", so the rule would otherwise start naming objects it was never meant
+  for.
 
 A device that has a name is never renamed here: renaming is always a person's
 edit (the device form's "Suggest again" button).
@@ -28,8 +34,9 @@ import logging
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.utils.translation import gettext as _
+from django.db.models import Count
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
+from django.utils.translation import gettext as _
 
 from netbox.context import current_request
 from netbox.signals import post_clean
@@ -95,6 +102,12 @@ def _accepted_suggestion(instance, rule):
 def name_on_clean(sender, instance, **kwargs):
     if getattr(instance, '_naming_skip', False):
         return
+    _check_on_clean(instance)
+    # Validated: pre_save needn't check this name again (_refuse_unchecked()).
+    instance._naming_checked = instance.name
+
+
+def _check_on_clean(instance):
     if instance.name and _form_says_auto(instance):
         instance.name = None
     rule = find_rule(instance)
@@ -135,6 +148,7 @@ def name_on_save(sender, instance, raw=False, **kwargs):
     if instance.name and not naming.is_auto(instance):
         # A name someone gave: only remember its number.
         if instance._state.adding or instance.name != _stored_name(instance):
+            _refuse_unchecked(instance)
             naming.remember(instance)
         suggested_by = getattr(instance, '_naming_suggested_by', None)
         if suggested_by is not None:
@@ -169,6 +183,22 @@ def name_on_save(sender, instance, raw=False, **kwargs):
     _add_changelog_message(instance, _message(rule, AssignedHowChoices.AUTO))
 
 
+def _refuse_unchecked(instance):
+    """
+    Backstop for a new or changed name saved without validation: a rule that
+    refuses names that don't fit refuses it here too. AbortRequest shows as
+    an ordinary error in NetBox's views and API, and stops a script.
+    """
+    if getattr(instance, '_naming_checked', None) == instance.name:
+        return
+    rule = find_rule(instance)
+    if rule is None or rule.enforcement != EnforcementChoices.REFUSE:
+        return
+    error = naming.check_typed_name(instance, rule)
+    if error:
+        raise AbortRequest(error)
+
+
 def record_on_save(sender, instance, raw=False, **kwargs):
     if raw:
         return
@@ -197,6 +227,37 @@ def forget_on_delete(sender, instance, **kwargs):
     AssignedName.of(instance).delete()
 
 
+def note_listing_rules(sender, instance, **kwargs):
+    """
+    pre_delete of a value rules can list (a site, role, tag, ...): remember
+    which enabled rules list it, per condition. Checked in post_delete, once
+    the rule's links to it are gone (also when several are deleted at once).
+    """
+    listing = {}
+    for name in _CONDITION_MODELS.get(sender, ()):
+        pks = list(NamingRule.objects.filter(enabled=True, **{name: instance}).values_list('pk', flat=True))
+        if pks:
+            listing[name] = pks
+    instance._naming_listing_rules = listing
+
+
+def disable_emptied_rules(sender, instance, **kwargs):
+    """post_delete: disable the rules whose condition lost its last value (see note_listing_rules())."""
+    for name, pks in (getattr(instance, '_naming_listing_rules', None) or {}).items():
+        emptied = NamingRule.objects.filter(pk__in=pks, enabled=True).annotate(left=Count(name)).filter(left=0)
+        for rule in emptied:
+            label = NamingRule._meta.get_field(name).verbose_name
+            rule.snapshot()
+            rule.enabled = False
+            rule._changelog_message = f'Disabled: the last of its {label} ("{instance}") was deleted'[:200]
+            rule.save()
+            logger.warning('Naming rule "%s" disabled: the last of its %s (%s) was deleted.', rule, label, instance)
+
+
+#: Model of each condition's values -> the rule fields that list it.
+_CONDITION_MODELS = {}
+
+
 def connect():
     """Hook the save signals of every kind's model (called from the app's ready())."""
     for kind in KINDS.values():
@@ -215,6 +276,12 @@ def connect():
     for name in NamingRule.CONDITION_FIELDS:
         through = getattr(NamingRule, name).through
         m2m_changed.connect(forget_rules, sender=through, dispatch_uid=f'{uid}.{name}')
+        model = NamingRule._meta.get_field(name).related_model
+        _CONDITION_MODELS.setdefault(model, []).append(name)
+    for model in _CONDITION_MODELS:
+        uid = f'netbox_naming_convention.condition.{model._meta.label_lower}'
+        pre_delete.connect(note_listing_rules, sender=model, dispatch_uid=f'{uid}.pre_delete')
+        post_delete.connect(disable_emptied_rules, sender=model, dispatch_uid=f'{uid}.post_delete')
 
 
 def _message(rule, how):
