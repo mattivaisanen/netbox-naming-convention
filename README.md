@@ -51,7 +51,9 @@ Everything below works the same for devices, virtual machines and racks;
   (without regard to case), so the next number is right from day one.
 - **Enforcement per rule:** off (only suggest and fill in), warn (names that
   don't fit are flagged on the device and listed on the rule), or refuse (a
-  new device or a rename must follow the rule, and may not reuse a number).
+  new device or a rename must follow the rule, and may not reuse a number;
+  also for NetBox's bulk rename, scripts and other plugins that save
+  without validating).
 - **Exclusions.** Objects tagged `naming-excluded` are left out of every
   rule, see *Excluding objects*.
 - **Preview while you write a rule.** The rule form shows the names the
@@ -120,6 +122,22 @@ python manage.py migrate netbox_naming_convention
 
 and restart NetBox.
 
+## Uninstalling
+
+Names the rules gave stay on the objects. To remove the plugin cleanly:
+
+```bash
+cd /opt/netbox/netbox
+python manage.py prepare_naming_uninstall
+python manage.py migrate netbox_naming_convention zero
+```
+
+The first command deletes NetBox's own rows about naming rules (change log,
+journal, bookmarks, tag assignments and the like), which would otherwise
+break pages once the plugin is gone; `--dry-run` only lists them. Then take
+`netbox_naming_convention` out of `PLUGINS`, restart NetBox and
+`pip uninstall netbox-naming-convention`.
+
 ## Rules
 
 Under **Naming → Naming Rules**. Rules are checked by priority (lowest
@@ -127,6 +145,11 @@ first); the first enabled rule that matches a device names it. On the same
 priority, the rule with more kinds of conditions is checked first, so a rule
 for switches tagged `lab` wins over one for all switches; after that, by
 name. Set different priorities when you want a fixed order.
+
+An empty condition matches anything. So when the last value of a condition
+is deleted (say the only site a rule lists), the rule is disabled rather than
+starting to name objects everywhere. Its change log says why; enable it again
+once its conditions are right.
 
 | Field | Meaning |
 | --- | --- |

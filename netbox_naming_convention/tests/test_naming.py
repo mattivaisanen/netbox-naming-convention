@@ -9,7 +9,7 @@ from django.db import connection, transaction
 from django.test import RequestFactory, TestCase, TransactionTestCase
 
 from dcim.choices import InterfaceTypeChoices
-from dcim.models import Device, Interface
+from dcim.models import Device, Interface, Site
 from extras.models import Tag
 from ipam.models import IPAddress
 from netbox.context_managers import event_tracking
@@ -305,6 +305,39 @@ class NamingTests(NetBoxData, TestCase):
         device.name = 'still-legacy'
         with self.assertRaises(ValidationError):
             device.full_clean()
+
+    def test_refuse_also_applies_without_validation(self):
+        # NetBox's bulk rename, scripts and bulk writers call save() only.
+        device = self.device(rack=self.ra8)
+        self.switches.enforcement = EnforcementChoices.REFUSE
+        self.switches.save()
+        device.name = 'renamed-switch'
+        with self.assertRaises(AbortRequest):
+            device.save()
+        device.name = 'NLUTSWI007_RA8'
+        device.save()  # fits the rule
+        device.serial = 'X1'
+        device.save()  # name unchanged
+
+    def test_rule_disabled_when_last_value_of_condition_deleted(self):
+        other = Site.objects.create(name='Arnhem', slug='arnhem')
+        spare = Site.objects.create(name='Delft', slug='delft')
+        self.switches.sites.set([other, spare])
+        other.delete()
+        self.switches.refresh_from_db()
+        self.assertTrue(self.switches.enabled)
+        spare.delete()
+        self.switches.refresh_from_db()
+        self.assertFalse(self.switches.enabled)
+        self.assertIsNone(self.device(site=self.nijmegen, rack=None).name)
+
+    def test_rule_disabled_when_all_values_deleted_at_once(self):
+        tag = Tag.objects.create(name='core', slug='core')
+        other = Tag.objects.create(name='edge', slug='edge')
+        self.switches.match_tags.set([tag, other])
+        Tag.objects.filter(pk__in=[tag.pk, other.pk]).delete()
+        self.switches.refresh_from_db()
+        self.assertFalse(self.switches.enabled)
 
     def test_priority_and_tags(self):
         lab = self.rule(roles=[self.router], sites=[self.utrecht], match_tags=[self.lab], priority=10,
